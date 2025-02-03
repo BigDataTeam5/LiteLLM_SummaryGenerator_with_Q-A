@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from typing import Dict
 from pydantic import BaseModel
 import os
@@ -108,6 +109,17 @@ async def root() -> Dict[str, str]:
         "version": "1.0.0",
         "documentation": "/docs"
     }
+
+
+# ✅ Favicon Route
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.ico")
+
+# ✅ Example Root Endpoint
+@app.get("/")
+async def root():
+    return {"message": "FastAPI is running on Cloud Run!"}
 
 @app.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)) -> Dict[str, str]:

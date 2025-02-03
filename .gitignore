@@ -7,6 +7,7 @@ api/__pycache__/
 venv/
 .venv/
 __pycache__/
+output.json
 .env
 # Ignore output files and diagrams
 diagram_output/

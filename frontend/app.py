@@ -20,7 +20,7 @@ if "markdown_history" not in st.session_state:
     st.session_state.markdown_history = []  # To store history of markdown files
 
 # FastAPI Base URL (Update this with the correct deployed FastAPI URL)
-FASTAPI_URL = "http://localhost:8080"
+FASTAPI_URL = "https://fastapi-app-974490277552.us-central1.run.app"
 # API Endpoints
 UPLOAD_PDF_API = f"{FASTAPI_URL}/upload-pdf"
 LATEST_FILE_API = f"{FASTAPI_URL}/get-latest-file-url"
@@ -70,7 +70,7 @@ def upload_pdf(file):
             st.session_state.file_uploaded = True
             return response.json()
         else:
-            return {"error": f"Upload failed: {response.status_code}"}
+             return {"error": response.json().get("detail", f"Upload failed: {response.status_code}")}
     except requests.RequestException as e:
         return {"error": str(e)}# Function to Trigger Open Source PDF Parsing (with Detailed Logging)
 
