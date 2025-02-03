@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from typing import Dict
 from pydantic import BaseModel
 import os
@@ -15,6 +16,7 @@ MAX_FILE_SIZE_MB = 5  # Max allowed file size in MB
 MAX_PAGE_COUNT = 5  # Max allowed pages
 
 import time
+
 
 # Add the root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -108,6 +110,17 @@ async def root() -> Dict[str, str]:
         "version": "1.0.0",
         "documentation": "/docs"
     }
+
+
+# ✅ Favicon Route
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.ico")
+
+# ✅ Example Root Endpoint
+@app.get("/")
+async def root():
+    return {"message": "FastAPI is running on Cloud Run!"}
 
 @app.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)) -> Dict[str, str]:

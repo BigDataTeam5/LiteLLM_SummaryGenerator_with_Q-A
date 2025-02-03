@@ -3,6 +3,9 @@ __pycache__
 *.pyo
 *.pyd
 .Python
+*.db
+*.sqlite3
+*.sqlite
 venv/
 .env
 *.log
@@ -10,3 +13,20 @@ venv/
 .gitignore
 .DS_Store
 uploaded_pdfs/
+*.pdf
+*.docx
+*.doc
+*.txt
+*.csv
+*.xlsx
+*.xls
+*.png
+*.jpg
+*.jpeg
+# Ignore Docker build and runtime artifacts
+*.tar
+*.img
+*.iml
+docker-compose.override.yml
+.envrc
+.envrc.local
