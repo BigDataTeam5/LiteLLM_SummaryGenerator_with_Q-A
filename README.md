@@ -49,10 +49,11 @@ Below is the workflow diagram for the AI Application:
 1. The **User** uploads data via the **Streamlit Frontend**.
 2. The **Frontend** sends the data to the **FastAPI Backend**.
 3. The **Backend** processes the data using one or more of the following:
-   - **PyPDF2 / pdfplumber** for PDF extraction.
-   - **BeautifulSoup / Scrapy** for web scraping.
+   - **PyMuPDF / Camelot** for open source PDF extraction.
+   - **BeautifulSoup / Scrapy** for open source webscraping.
    - **Microsoft Document Intelligence** for enterprise document processing.
-4. The extracted data is standardized using **Docling** and **MarkItDown**.
+   - **APIFy** for enterprise webscraping.
+4. The extracted data is standardized using **Docling** in the pdf_process_pipeline and **MarkItDown** for webscraping_pipeline opensource.(Note:APIFy parses and generates markdown)
 5. The processed data is stored in an **AWS S3 Bucket**.
 6. The **Frontend** retrieves the processed data from the **S3 Bucket** and displays it to the **User**.
 
@@ -63,7 +64,7 @@ Below is the workflow diagram for the AI Application:
 - Python 3.7+
 - [Diagrams](https://diagrams.mingrammer.com/) library for generating the workflow diagram.
 - AWS account with S3 bucket access.
-- Streamlit and FastAPI installed for frontend and backend development.
+- Streamlit and FastAPI installed for frontend and backend development and also other libraries.
 
 ---
 ## Installation
@@ -79,45 +80,49 @@ Clone the repository:
    ```bash
    AWS_ACCESS_KEY_ID=your_aws_access_key
    AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+   AWS_REGION=your_aws_region
    AZURE_DOCUMENT_INTELLIGENCE_KEY=your_azure_key
+   AZURE_FORM_RECOGNIZER_ENDPOINT=aws_form_recognizer_endpoint
    APIFY_TOKEN=your_apify_token
-   ADOBE_API_KEY=your_adobe_api_key
    ```
-   
-   Build and run the application using Docker Compose:
-   ```bash
-   docker-compose build --no-cache
-   docker-compose up -d
-   ```
-   
    
 3. Ensure you have the custom icons (`microsoft.png`, `docling.png`, `markitdown.png`, `streamlit.png`) in the `./icons/` directory.
-
 4. Generate the workflow diagram:
    ```bash
    python generate_diagram.py
    ```
 
----
-
-## Usage
+4.Install dependencies:
+create venv inside api and frotend folder
+```bash
+cd api
+python -m venv venv
+venv/Scripts/activate
+pip install -r requirements
+```
+in new terminal
+```bash
+cd frontend
+python -m venv venv
+venv/Scripts/activate
+pip install -r requirements
+```
+## Usage for Testing Locally
 
 1. Run the FastAPI backend:
    ```bash
-   uvicorn backend:app --reload
+   uvicorn main:app --reload --host 0.0.0.0 --port 8080  
    ```
 
 2. Run the Streamlit frontend:
+   in another term
    ```bash
    streamlit run frontend.py
    ```
 
-3. Open your browser and navigate to `http://localhost:8501` to interact with the application.
+4. Open your browser and navigate to `http://localhost:8501` to interact with the application.
 
 ---
-
-
-
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
