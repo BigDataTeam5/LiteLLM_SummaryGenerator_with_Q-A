@@ -19,11 +19,11 @@ import time
 
 # Add the root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from Azure_Document_Intelligence import extract_and_upload_pdf
-from EnterpriseWebScrap import is_valid_url, save_and_upload_images, generate_and_upload_markdown
-from OSWebScrap import scrape_text_data_with_images, scrape_visual_data, convert_to_markdown
-from open_source_parsing import extract_all_from_pdf
-from docklingextraction import main
+from PDF_Extraction_and_Markdown_Generation.Azure_Document_Intelligence import extract_and_upload_pdf
+from WebScraping_Extraction_and_Markdown_Generation.EnterpriseWebScrap import is_valid_url, save_and_upload_images, generate_and_upload_markdown
+from WebScraping_Extraction_and_Markdown_Generation.OSWebScrap import scrape_text_data_with_images, scrape_visual_data, convert_to_markdown
+from PDF_Extraction_and_Markdown_Generation.open_source_parsing import extract_all_from_pdf
+from PDF_Extraction_and_Markdown_Generation.docklingextraction import main
 #  Now import the parsing functions
 #  Call the Docling conversion function
 # Load environment variables from .env file
