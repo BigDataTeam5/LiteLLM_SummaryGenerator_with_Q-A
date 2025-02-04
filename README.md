@@ -69,13 +69,13 @@ Below is the workflow diagram for the AI Application:
 ---
 ## Installation
 
-Clone the repository:
+1.Clone the repository:
 
    ```bash
    git clone https://github.com/yourusername/ai-application-workflow.git
    cd ai-application-workflow
    ```
-   Create a .env file and add the required credentials:
+2.Create a .env file and add the required credentials:
 
    ```bash
    AWS_ACCESS_KEY_ID=your_aws_access_key
@@ -123,6 +123,16 @@ pip install -r requirements
 4. Open your browser and navigate to `http://localhost:8501` to interact with the application.
 
 ---
+## Deployment Strategies to Gcloud:
+1.Dockerise
+   a.There are 2 DockerFiles in the frontend(Streamlit) and api(FASTAPI) folders.
+   b.After installing Docker Desktop,create the docker images using the following commands
+   create the fast api docker image
+   before that run the following commands to authorize Google Cloud SDK.And make sure you run these command in the root directory of the project.
+   ```bash
+      
+   ```
+   
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
