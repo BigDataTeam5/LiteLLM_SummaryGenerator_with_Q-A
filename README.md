@@ -8,7 +8,7 @@ This project outlines the architecture and workflow of an AI application that pr
 
 Below is the workflow diagram for the AI Application:
 
-![AI Application Workflow](./ai_application_workflow.png)
+![AI Application Workflow](https://github.com/khavnekar-y/AI-Information-Extractor/blob/main/ai_application_workflow%20(2).png)
 
 ### Diagram Description:
 1. **User**: The end-user interacts with the application via the Streamlit frontend.
