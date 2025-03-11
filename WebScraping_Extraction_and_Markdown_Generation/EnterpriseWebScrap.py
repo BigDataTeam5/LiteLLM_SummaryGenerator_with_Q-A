@@ -5,7 +5,7 @@ from apify_client import ApifyClient
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from OSWebScrap import upload_file_to_s3
+from WebScraping_Extraction_and_Markdown_Generation.OSWebScrap import upload_file_to_s3
 
 # ✅ Load environment variables
 load_dotenv()

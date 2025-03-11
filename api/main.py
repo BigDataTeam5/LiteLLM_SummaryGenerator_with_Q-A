@@ -34,7 +34,7 @@ load_dotenv()
 S3_BUCKET = os.getenv("AWS_BUCKET_NAME")
 AWS_ACCESS_KEY_ID = os.getenv("AWS_SERVER_PUBLIC_KEY")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SERVER_SECRET_KEY")
-AWS_REGION = "us-east-2"
+AWS_REGION = os.getenv("AWS_REGION")
 
 # Apify Configuration
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
@@ -122,7 +122,7 @@ async def root():
     return {"message": "FastAPI is running on Cloud Run!"}
 
 @app.post("/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)) -> Dict[str, str]:
+async def upload_pdf(file: UploadFile = File(...), service_type: str = Query("")) -> Dict[str, str]:
     """
     Uploads a PDF file to AWS S3 after checking constraints.
     """
@@ -138,33 +138,33 @@ async def upload_pdf(file: UploadFile = File(...)) -> Dict[str, str]:
     temp_pdf_path = None  # Define temp path for cleanup
 
     try:
-        # ✅ Save the uploaded file temporarily
+        # Save the uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
             temp_pdf.write(file.file.read())
             temp_pdf_path = temp_pdf.name
 
-        # ✅ Check PDF constraints
-        constraint_check = check_pdf_constraints(temp_pdf_path)
+        # Check PDF constraints for only Enterprise service type
+        if service_type == "Enterprise":
+            constraint_check = check_pdf_constraints(temp_pdf_path)
+            if "error" in constraint_check:
+                os.remove(temp_pdf_path)  # Cleanup temp file
+                raise HTTPException(status_code=400, detail=constraint_check["error"])
 
-        if "error" in constraint_check:
-            os.remove(temp_pdf_path)  # Cleanup temp file
-            raise HTTPException(status_code=400, detail=constraint_check["error"])
-
-        # ✅ Upload file to S3 (only if constraints are met)
+        # Upload file to S3 (only if constraints are met)
         s3_key = f"RawInputs/{file.filename}"
         s3_client.upload_file(temp_pdf_path, S3_BUCKET, s3_key)
 
-        # ✅ Generate pre-signed URL
+        # Generate pre-signed URL
         file_url = s3_client.generate_presigned_url(
             'get_object',
             Params={'Bucket': S3_BUCKET, 'Key': s3_key},
             ExpiresIn=3600  # 1 hour validity
         )
 
-        # ✅ Cleanup: Delete the temp file after successful upload
+        # Cleanup: Delete the temp file after successful upload
         os.remove(temp_pdf_path)
 
-        # ✅ Save the file details globally
+        # Save the file details globally
         global latest_file_details
         latest_file_details = {
             "filename": file.filename,
@@ -175,13 +175,18 @@ async def upload_pdf(file: UploadFile = File(...)) -> Dict[str, str]:
         return {"filename": file.filename, "message": "✅ PDF uploaded successfully!", "file_url": file_url}
 
     except NoCredentialsError:
-        if temp_pdf_path:
+        if temp_pdf_path and os.path.exists(temp_pdf_path):
             os.remove(temp_pdf_path)  # Cleanup on error
         raise HTTPException(status_code=500, detail="AWS credentials not found")
+    except HTTPException as e:
+        if temp_pdf_path and os.path.exists(temp_pdf_path):
+            os.remove(temp_pdf_path)  # Cleanup on error
+        raise e
     except Exception as e:
-        if temp_pdf_path:
+        if temp_pdf_path and os.path.exists(temp_pdf_path):
             os.remove(temp_pdf_path)  # Cleanup on error
         raise HTTPException(status_code=500, detail=f"❌ Upload failed: {str(e)}")
+        
 @app.get("/get-latest-file-url")
 async def get_latest_file_url() -> Dict[str, str]:
     """

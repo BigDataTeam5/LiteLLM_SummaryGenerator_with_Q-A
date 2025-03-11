@@ -20,7 +20,8 @@ if "markdown_history" not in st.session_state:
     st.session_state.markdown_history = []  # To store history of markdown files
 
 # FastAPI Base URL (Update this with the correct deployed FastAPI URL)
-FASTAPI_URL = "https://fastapi-app-974490277552.us-central1.run.app"
+# FASTAPI_URL = "https://fastapi-app-974490277552.us-central1.run.app"
+FASTAPI_URL = "http://localhost:8080"
 # API Endpoints
 UPLOAD_PDF_API = f"{FASTAPI_URL}/upload-pdf"
 LATEST_FILE_API = f"{FASTAPI_URL}/get-latest-file-url"
@@ -65,15 +66,23 @@ def upload_pdf(file):
     try:
         files = {"file": (file.name, file.getvalue(), "application/pdf")}
         with st.spinner("📤 Uploading PDF... Please wait."):
-            response = requests.post(UPLOAD_PDF_API, files=files)
+            service_type = st.session_state.get("service_type", None)
+            response = requests.post(UPLOAD_PDF_API, files=files, params={"service_type": service_type})
+
         if response.status_code == 200:
             st.session_state.file_uploaded = True
             return response.json()
         else:
-             return {"error": response.json().get("detail", f"Upload failed: {response.status_code}")}
+            try:
+                error_detail = response.json().get("detail", f"Upload failed: {response.status_code}")
+            except ValueError:
+                error_detail = f"Upload failed: {response.status_code}"
+            st.error(f"Error: {error_detail}")
+            return {"error": error_detail}
     except requests.RequestException as e:
-        return {"error": str(e)}# Function to Trigger Open Source PDF Parsing (with Detailed Logging)
-
+        st.error(f"Request Exception: {str(e)}")
+        return {"error": str(e)}
+            
 def process_open_source_pdf():
     with st.spinner("⏳ Processing Open Source PDF... Please wait."):
         progress_bar = st.progress(0)  # Initialize progress bar
@@ -141,8 +150,6 @@ def convert_to_markdown():
                 progress_bar.progress((i + 1) * 10)
 
             service_type = st.session_state.get("service_type", None)
-            if not service_type or service_type == "Select Service":
-                return {"error": "⚠️ Please select a valid Service Type!"}
             # Step 1: Get Latest File URL
             response_latest = requests.get(LATEST_FILE_API,params={"service_type": service_type})
             if response_latest.status_code != 200:
@@ -328,7 +335,7 @@ if st.session_state.get("next_clicked", False):
             st.session_state.file_uploaded = True
             upload_response = upload_pdf(uploaded_file)
             if "error" in upload_response:
-                st.error(upload_response["error"])
+                pass
             else:
                 st.success("✅ PDF File Uploaded Successfully!")
 
