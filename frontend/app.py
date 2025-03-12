@@ -1,9 +1,13 @@
 import streamlit as st
 import requests
 import time
+import sys
+import os
+sys.path.append("LLM_Interactor")
+# from logger import api_logger
 
 # Streamlit UI
-st.set_page_config(page_title="📄 PDF Processing & Markdown Viewer", layout="wide")
+st.set_page_config(page_title="", layout="wide")
 # Initialize session state variables if they do not exist
 if "file_uploaded" not in st.session_state:
     st.session_state.file_uploaded = False
@@ -16,6 +20,10 @@ if "show_url_input" not in st.session_state:
 # Initialize session state for markdown history
 if "markdown_history" not in st.session_state:
     st.session_state.markdown_history = []  # To store history of markdown files
+if "selected_markdown_content" not in st.session_state:
+    st.session_state.selected_markdown_content = None
+if "selected_markdown_name" not in st.session_state:
+    st.session_state.selected_markdown_name = None
 
 # FastAPI Base URL (Update this with the correct deployed FastAPI URL)
 # FASTAPI_URL = "https://fastapi-app-974490277552.us-central1.run.app"
@@ -227,34 +235,33 @@ with st.sidebar:
             for idx, markdown in enumerate(st.session_state.markdown_history):
                 # Create ChatGPT-like buttons with HTML
                 button_class = "chat-button"
-                if "selected_markdown_name" in st.session_state and st.session_state.selected_markdown_name == markdown["file_name"]:
+                if "selected_markdown_name" in st.session_state and st.session_state.selected_markdown_name == markdown["label"]:
                     button_class += " chat-active"
                 
                 if st.button(markdown["label"], key=f"history_{idx}", use_container_width=True):
                     try:
                         content = requests.get(markdown["url"]).text
                         st.session_state.selected_markdown_content = content
-                        st.session_state.selected_markdown_name = markdown["file_name"]
+                        st.session_state.selected_markdown_name = markdown["label"]
                         st.session_state.markdown_ready = True
                     except Exception as e:
                         st.error(f"Error loading markdown: {str(e)}")
 
 # Main Page Logic
-st.title("📄 Data Processing App & Markdown Viewer")
+st.title("📄 LiteLLM Summary Generator and AI Assistant")
 # Show Markdown Content from history if it exists (outside other conditionals)
 if "selected_markdown_content" in st.session_state:
-    st.markdown("### 📄 LiteLLM Summary Generator and AI Assistant")
     st.markdown(f"**Viewing: {st.session_state.selected_markdown_name}**")
     st.markdown(st.session_state.selected_markdown_content, unsafe_allow_html=True)
     
-    # Add a download button for convenience
-    st.download_button(
-        label="⬇️ Download This Markdown",
-        data=st.session_state.selected_markdown_content,
-        file_name=f"{st.session_state.selected_markdown_name}.md",
-        mime="text/markdown"
-    )
-    st.input("Enter your feedback here:", type="text")
+    # # Add a download button for convenience
+    # st.download_button(
+    #     label="⬇️ Download This Markdown",
+    #     data=st.session_state.selected_markdown_content,
+    #     file_name=f"{st.session_state.selected_markdown_name}.md",
+    #     mime="text/markdown"
+    # )
+    text_input = st.text_area("Enter text to summarize:")
 
 if st.session_state.get("next_clicked", False):
     if st.session_state.processing_type == "PDF Extraction":
