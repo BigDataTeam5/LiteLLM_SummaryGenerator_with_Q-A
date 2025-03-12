@@ -7,8 +7,6 @@ st.set_page_config(page_title="📄 PDF Processing & Markdown Viewer", layout="w
 # Initialize session state variables if they do not exist
 if "file_uploaded" not in st.session_state:
     st.session_state.file_uploaded = False
-if "extraction_complete" not in st.session_state:
-    st.session_state.extraction_complete = False
 if "markdown_ready" not in st.session_state:
     st.session_state.markdown_ready = False
 if "show_pdf_uploader" not in st.session_state:
@@ -30,36 +28,9 @@ PARSE_PDF_AZURE_API = f"{FASTAPI_URL}/parse-pdf-azure"
 CONVERT_MARKDOWN_API = f"{FASTAPI_URL}/convert-pdf-markdown"
 FETCH_MARKDOWN_API = f"{FASTAPI_URL}/fetch-latest-markdown-urls"
 FETCH_DOWNLOADABLE_MARKDOWN_API = f"{FASTAPI_URL}/fetch-latest-markdown-downloads"
-SCRAPE_OS_API = f"{FASTAPI_URL}/OpenSourceWebscrape/"
-SCRAPE_EN_API = f"{FASTAPI_URL}/enscrape"
-FETCH_WEB_MARKDOWN_API = f"{FASTAPI_URL}/fetch-WebScrapMarkdowns"
-
+FETCH_MARKDOWN_HISTORY = f"{FASTAPI_URL}/fetch-image-ref-markdowns"
 uploaded_file = None  # Define uploaded_file globally
-url_input = None  # Define url_input globally
 
-# Sidebar UI
-with st.sidebar:
-    st.subheader("Select Options")
-
-    # Dropdown for processing type
-    processing_type = st.selectbox("Processing Type:", ["Select an option", "PDF Extraction", "Web URL Scraping"], index=0)
-    st.session_state.processing_type = processing_type
-
-    # Dropdown for service type
-    service_type = st.selectbox("Service Type:", ["Select Service", "Open Source", "Enterprise"], index=0)
-    st.session_state.service_type = service_type
-
- # Next button
-    if st.button("Next"):
-        if processing_type == "Select an option" or service_type == "Select Service":
-            st.error("Please select both Processing Type and Service Type.")
-        else:
-            st.session_state.next_clicked = True
-            st.success("Processing Type and Service Type selected successfully.")    
-    st.subheader("📑 Markdown History")
-    for markdown in st.session_state.markdown_history:
-        if st.button(markdown["label"]):
-            st.session_state.selected_markdown = markdown["content"]  # Set the selected markdown content
 
 # Function to Upload File to S3
 def upload_pdf(file):
@@ -83,62 +54,6 @@ def upload_pdf(file):
         st.error(f"Request Exception: {str(e)}")
         return {"error": str(e)}
             
-def process_open_source_pdf():
-    with st.spinner("⏳ Processing Open Source PDF... Please wait."):
-        progress_bar = st.progress(0)  # Initialize progress bar
-        try:
-            for i in range(10):  # Simulate progress while waiting
-                time.sleep(1)
-                progress_bar.progress((i + 1) * 10)  # Update progress
-
-            # Step 1: Get Latest File URL
-            response_latest = requests.get(LATEST_FILE_API)
-            if response_latest.status_code != 200:
-                progress_bar.empty()
-                return {"error": f"❌ Failed to fetch latest file URL: {response_latest.text}"}
-
-            # Step 2: Parse the PDF
-            response_parse = requests.get(PARSE_PDF_API, timeout=600)  # Increased timeout
-            if response_parse.status_code == 200:
-                st.session_state.extraction_complete = True
-                progress_bar.empty()
-                return {"message": f"✅ Open Source PDF Analysis Completed! Click Markdown to view results.\n\n**Response:** {response_parse.text}"}
-            else:
-                progress_bar.empty()
-                return {"error": f"❌ Parsing failed! Response: {response_parse.text}"}
-
-        except requests.exceptions.RequestException as e:
-            progress_bar.empty()
-            return {"error": f"⚠️ API Request Failed: {str(e)}"}
-# Function to Trigger Azure PDF Parsing (Enterprise) with Progress Bar & Debugging
-def process_azure_pdf():
-    with st.spinner("⏳ Processing PDF using Azure Document Intelligence... Please wait."):
-        progress_bar = st.progress(0)
-
-        try:
-            for i in range(10):  # Simulate progress while waiting
-                time.sleep(1)
-                progress_bar.progress((i + 1) * 10)
-             # Step 1: Get Latest File URL
-            response_latest = requests.get(LATEST_FILE_API)
-            if response_latest.status_code != 200:
-                progress_bar.empty()
-                return {"error": f"❌ Failed to fetch latest file URL: {response_latest.text}"}
-
-            response = requests.get(PARSE_PDF_AZURE_API, timeout=600)  # Increased timeout
-
-            if response.status_code == 200:
-                st.session_state.extraction_complete = True
-                progress_bar.empty()
-                return {"message": f"✅ Azure-based PDF Analysis Completed! Click Markdown to view results.\n\n**Response:** {response.text}"}
-            else:
-                error_message = response.json().get("detail", "❌ Azure PDF Parsing failed!")
-                return {"error": error_message}
-
-        except requests.exceptions.RequestException as e:
-            progress_bar.empty()
-            return {"error": f"⚠️ API Request Failed: {str(e)}"}
-
 # Function to Convert PDF to Markdown (With Progress Bar)
 def convert_to_markdown():
     with st.spinner("⏳ Converting PDF to Markdown... Please wait."):
@@ -161,6 +76,8 @@ def convert_to_markdown():
             if response.status_code == 200:
                 st.session_state.markdown_ready = True
                 progress_bar.empty()
+                # Call fetch_markdown_history after success conversion
+                fetch_markdown_history()
                 return {"message": "✅ Markdown Conversion Completed! Click View to see results."}
             else:
                 progress_bar.empty()
@@ -211,121 +128,139 @@ def fetch_downloadable_markdown():
 
     except requests.RequestException as e:
         return {"error": str(e)}
-    
-# ✅ Function to Fetch Web Markdown
-def fetch_web_markdown():
-    with st.spinner("⏳ Fetching Web Markdown File from S3... Please wait."):
-        progress_bar = st.progress(0)
-
-        try:
-            for i in range(10):  
-                time.sleep(0.5)
-                progress_bar.progress((i + 1) * 10)
-
-            # ✅ Ensure service type is fetched correctly
-            service_type = st.session_state.get("service_type", None)
-            if not service_type or service_type == "Select Service":
-                return {"error": "⚠️ Please select a valid Service Type!"}
-
-            # st.write(f"✅ Fetching markdown for service type: {service_type}")
-
-            # ✅ Call API with service_type
-            response = requests.get(FETCH_WEB_MARKDOWN_API, params={"service_type": service_type})
-
-            # # ✅ Debugging Output
-            # st.write(f"🛠 API Response Code: {response.status_code}")
-            # st.write(f"🛠 API Raw Response: {response.text}")
-
-            if response.status_code == 200:
-                markdown_file_url = response.json().get("download_url", None)
-                progress_bar.empty()
-
-                if markdown_file_url:
-                    return {"file_url": markdown_file_url}  # ✅ Return single file URL
-                else:
-                    return {"error": "No web markdown file found!"}
-            else:
-                progress_bar.empty()
-                return {"error": f"Failed to fetch web markdown file! Status: {response.status_code}"}
-
-        except requests.RequestException as e:
-            progress_bar.empty()
-            return {"error": str(e)}
+# Function to fetch image-ref markdown history
+def fetch_markdown_history():
+    """
+    Fetch all image-ref markdown files from S3 across all folders.
+    """
+    try:
+        with st.spinner("⏳ Fetching markdown history... Please wait."):
+            response = requests.get(FETCH_MARKDOWN_HISTORY)
         
-# ✅ Function to Scrape Open Source URL
-def os_scrape_url(url):
-    with st.spinner("⏳ Scraping Webpage using Open Source Tools... Please wait."):
-        progress_bar = st.progress(0)
+        if response.status_code == 200:
+            markdown_data = response.json()
+            # Process the markdown files for display in sidebar history
+            history_items = []
+            
+            for item in markdown_data.get("image_ref_markdowns", []):
+                display_name = item["file_name"].replace("-with-image-refs", "").replace(".md", "")
+                history_items.append({
+                    "label": display_name,
+                    "url": item["download_url"],
+                    "folder": item["folder"],
+                    "last_modified": item["last_modified"]
+                })
+            
+            # Update session state with the history items
+            st.session_state.markdown_history = history_items
+            return history_items
+        else:
+            st.error(f"Failed to fetch markdown history! Response: {response.text}")
+            return []
 
-        try:
-            for i in range(10):  
-                time.sleep(0.5)
-                progress_bar.progress((i + 1) * 10)
+    except requests.RequestException as e:
+        st.error(f"Request error: {str(e)}")
+        return []
+    
+if not st.session_state.markdown_history:
+    fetch_markdown_history()
 
-            service_type = st.session_state.get("service_type", None)  # ✅ Fetch selected service type
-            if not service_type or service_type == "Select Service":
-                return {"error": "⚠️ Please select 'Open Source' or 'Enterprise' before scraping!"}
+# Sidebar UI
+with st.sidebar:
+    st.subheader("Select Options")
 
-            payload = {"url": url}
-            response = requests.post(
-                SCRAPE_OS_API,
-                json=payload,
-                params={"service_type": service_type}  # ✅ Send service_type dynamically
-            )
+    # Dropdown for processing type
+    processing_type = st.selectbox("Processing Type:", ["Select an option", "PDF Extraction"], index=0)
+    st.session_state.processing_type = processing_type
 
-            progress_bar.empty()
+    # Dropdown for service type
+    service_type = st.selectbox("Service Type:", ["Select Service", "Open Source", "Enterprise"], index=0)
+    st.session_state.service_type = service_type
 
-            if response.status_code == 200:
-                st.session_state["last_service_type"] = service_type  # ✅ Store service_type after extraction
-                return response.json()
-            else:
-                return {"error": f"Failed to scrape URL. Status code: {response.status_code}"}
+    #Dropdown for selecting llm model using Litellm
+    llm_model = st.selectbox("Select LLM Model:", ["Select Model", "chatgpt", "claude","grok","gemini","deepseek"], index=0)
 
-        except requests.RequestException as e:
-            progress_bar.empty()
-            return {"error": str(e)}
+ # Next button
+    if st.button("Next"):
+        if processing_type == "Select an option" or service_type == "Select Service":
+            st.error("Please select both Processing Type and Service Type.")
+        else:
+            st.session_state.next_clicked = True
+            st.success("Processing Type and Service Type selected successfully.")    
 
+        # Add custom CSS for ChatGPT-like sidebar buttons
+    st.markdown("""
+    <style>
+    .chat-button {
+        display: block;
+        width: 100%;
+        border: none;
+        background-color: transparent;
+        padding: 10px 15px;
+        text-align: left;
+        cursor: pointer;
+        border-radius: 5px;
+        margin-bottom: 5px;
+        color: #444;
+        font-size: 14px;
+        transition: background-color 0.3s;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+    .chat-button:hover {
+        background-color: rgba(0,0,0,0.05);
+    }
+    .chat-active {
+        background-color: rgba(0,0,0,0.1);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# ✅ Function to Scrape Enterprise URL
-def en_scrape_url(url):
-    with st.spinner("⏳ Scraping Webpage using APIFY... Please wait."):
-        progress_bar = st.progress(0)
+    st.subheader("📑 Markdown History")
+    # Show markdown history items with ChatGPT-like styling
+    history_container = st.container()
+    with history_container:
+        if not st.session_state.markdown_history:
+            st.info("No markdown history available")
+        else:
+            for idx, markdown in enumerate(st.session_state.markdown_history):
+                # Create ChatGPT-like buttons with HTML
+                button_class = "chat-button"
+                if "selected_markdown_name" in st.session_state and st.session_state.selected_markdown_name == markdown["file_name"]:
+                    button_class += " chat-active"
+                
+                if st.button(markdown["label"], key=f"history_{idx}", use_container_width=True):
+                    try:
+                        content = requests.get(markdown["url"]).text
+                        st.session_state.selected_markdown_content = content
+                        st.session_state.selected_markdown_name = markdown["file_name"]
+                        st.session_state.markdown_ready = True
+                    except Exception as e:
+                        st.error(f"Error loading markdown: {str(e)}")
 
-        try:
-            for i in range(10):  
-                time.sleep(0.5)
-                progress_bar.progress((i + 1) * 10)
-
-            service_type = st.session_state.get("service_type", None)  # ✅ Fetch selected service type
-            if not service_type or service_type == "Select Service":
-                return {"error": "⚠️ Please select 'Open Source' or 'Enterprise' before scraping!"}
-
-            payload = {"url": url}
-            response = requests.post(
-                SCRAPE_EN_API,
-                json=payload,
-                params={"service_type": service_type}  # ✅ Send service_type dynamically
-            )
-
-            progress_bar.empty()
-
-            if response.status_code == 200:
-                st.session_state["last_service_type"] = service_type  # ✅ Store service_type after extraction
-                return response.json()
-            else:
-                return {"error": f"Failed to scrape URL. Status code: {response.status_code}"}
-
-        except requests.RequestException as e:
-            progress_bar.empty()
-            return {"error": str(e)}
 # Main Page Logic
 st.title("📄 Data Processing App & Markdown Viewer")
+# Show Markdown Content from history if it exists (outside other conditionals)
+if "selected_markdown_content" in st.session_state:
+    st.markdown("### 📄 LiteLLM Summary Generator and AI Assistant")
+    st.markdown(f"**Viewing: {st.session_state.selected_markdown_name}**")
+    st.markdown(st.session_state.selected_markdown_content, unsafe_allow_html=True)
+    
+    # Add a download button for convenience
+    st.download_button(
+        label="⬇️ Download This Markdown",
+        data=st.session_state.selected_markdown_content,
+        file_name=f"{st.session_state.selected_markdown_name}.md",
+        mime="text/markdown"
+    )
+    st.input("Enter your feedback here:", type="text")
 
 if st.session_state.get("next_clicked", False):
     if st.session_state.processing_type == "PDF Extraction":
         # Display tools being used
         if st.session_state.service_type == "Open Source":
-            st.subheader("Using Tools: PyMuPDF, Camelot")
+            st.subheader("Using Tools: Docling")
         elif st.session_state.service_type == "Enterprise":
             st.subheader("Using Tools: Azure Document Intelligence")
         
@@ -339,34 +274,14 @@ if st.session_state.get("next_clicked", False):
             else:
                 st.success("✅ PDF File Uploaded Successfully!")
 
-        # Extract button
-        if st.button("🛠 Extract"):
-            if not uploaded_file:
-                st.warning("⚠️ Please upload a file first!")
-            elif st.session_state.service_type == "Open Source":
-                extract_response = process_open_source_pdf()
-                if "error" in extract_response:
-                    st.error(extract_response["error"])
-                else:
-                    st.success(extract_response["message"])
-                    st.session_state.extraction_complete = True
-            elif st.session_state.service_type == "Enterprise":
-                extract_response = process_azure_pdf()
-                if "error" in extract_response:
-                    st.error(extract_response["error"])
-                else:
-                    st.success(extract_response["message"])
-                    st.session_state.extraction_complete = True
-
-        # Convert to Markdown Button (Only appears after extraction)
-        if st.session_state.get("extraction_complete", False) and not st.session_state.get("markdown_ready", False):
-            if st.button("📑 Convert to Markdown"):
-                markdown_response = convert_to_markdown()
-                if "error" in markdown_response:
-                    st.error(markdown_response["error"])
-                else:
-                    st.success(markdown_response["message"])
-                    st.session_state.markdown_ready = True  # ✅ Set markdown state to True
+        # if st.session_state.get("extraction_complete", False) and not st.session_state.get("markdown_ready", False):
+        if st.button("📑 Convert to Markdown"):
+            markdown_response = convert_to_markdown()
+            if "error" in markdown_response:
+                st.error(markdown_response["error"])
+            else:
+                st.success(markdown_response["message"])
+                st.session_state.markdown_ready = True  # ✅ Set markdown state to True
 
         # Fetch markdown URLs from the latest job-specific folder
         if st.session_state.get("markdown_ready", False):
@@ -410,62 +325,3 @@ if st.session_state.get("next_clicked", False):
             
             # ✅ Use `st.markdown()` to properly render Markdown with headings, lists, etc.
             st.markdown(st.session_state.selected_markdown_content, unsafe_allow_html=True)
-
-    # Web URL Scraping Logic
-    elif st.session_state.processing_type == "Web URL Scraping":
-        # Display tools being used
-        if st.session_state.service_type == "Open Source":
-            st.subheader("Using Tools: BeautifulSoup, Scrapy")
-        elif st.session_state.service_type == "Enterprise":
-            st.subheader("Using Tools: APIFY")
-        
-        # Display text input for URL
-        url_input = st.text_input("Enter a Web URL:", placeholder="https://example.com")
-        
-        # ✅ Scrape button
-        if st.button("🔍 Scrape"):
-            if not url_input:
-                st.warning("⚠️ Please enter a URL first!")
-            else:
-                with st.spinner("⏳ Scraping in progress... Please wait."):
-                    if st.session_state.service_type == "Open Source":
-                        scrape_response = os_scrape_url(url_input)
-                    elif st.session_state.service_type == "Enterprise":
-                        scrape_response = en_scrape_url(url_input)
-                    else:
-                        st.error("⚠️ Please select 'Open Source' or 'Enterprise'.")
-                        scrape_response = {"error": "Invalid service type!"}
-
-                if "error" in scrape_response:
-                    st.error(scrape_response["error"])
-                else:
-                    st.success("✅ Scraping completed successfully!")
-                    st.session_state.web_markdown_ready = True  # ✅ Mark as ready
-
-        # ✅ Fetch markdown URLs after scraping
-        # Fetch and View Web Markdown
-        if st.session_state.get("web_markdown_ready", False):
-            st.markdown("## 🌐 Web Markdown Viewer")
-
-            # ✅ Fetch the single markdown file
-            markdown_response = fetch_web_markdown()
-
-            if "error" in markdown_response:
-                st.warning(markdown_response["error"])
-            else:
-                markdown_file_url = markdown_response.get("file_url")
-                if markdown_file_url:
-                    # ✅ Add a Download Button for the Markdown File
-                    st.download_button(
-                        label="⬇️ Download Web Markdown",
-                        data=requests.get(markdown_file_url).text,  # Fetch file content
-                        file_name="web_markdown.md",
-                        mime="text/markdown"
-                    )
-
-                    # ✅ Fetch and Display Markdown Content
-                    markdown_content = requests.get(markdown_file_url).text
-                    st.markdown("### 📄 Markdown Content Viewer")
-                    st.markdown(markdown_content, unsafe_allow_html=True)
-                else:
-                    st.warning("⚠️ Markdown file URL is missing!")
