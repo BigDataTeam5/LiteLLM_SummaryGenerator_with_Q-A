@@ -450,8 +450,8 @@ async def fetch_latest_markdown_downloads():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch markdown downloads: {str(e)}")
     
-@app.get("/fetch-image-ref-markdowns")
-async def fetch_image_ref_markdowns():
+@app.get("/list-image-ref-markdowns")
+async def list_image_ref_markdowns():
     """
     Fetch all Markdown files with 'image-ref' suffix from all subfolders in S3 and generate download links.
     """

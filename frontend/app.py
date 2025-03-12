@@ -36,7 +36,7 @@ PARSE_PDF_AZURE_API = f"{FASTAPI_URL}/parse-pdf-azure"
 CONVERT_MARKDOWN_API = f"{FASTAPI_URL}/convert-pdf-markdown"
 FETCH_MARKDOWN_API = f"{FASTAPI_URL}/fetch-latest-markdown-urls"
 FETCH_DOWNLOADABLE_MARKDOWN_API = f"{FASTAPI_URL}/fetch-latest-markdown-downloads"
-FETCH_MARKDOWN_HISTORY = f"{FASTAPI_URL}/fetch-image-ref-markdowns"
+FETCH_MARKDOWN_HISTORY = f"{FASTAPI_URL}/list-image-ref-markdowns"
 uploaded_file = None  # Define uploaded_file globally
 
 
