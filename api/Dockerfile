@@ -1,28 +1,40 @@
 # Use an official Python image
-FROM python:3.9-slim
+FROM --platform=linux/amd64 python:3.9-slim
 
 # Set the working directory inside the container
 WORKDIR /app
 
+# Install system dependencies including Redis
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    redis-server \
+    build-essential \
+    wget \
+    supervisor \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the entire project to the container
-COPY api /app/api
-COPY PDF_Extraction_and_Markdown_Generation /app/PDF_Extraction_and_Markdown_Generation
-COPY WebScraping_Extraction_and_Markdown_Generation /app/WebScraping_Extraction_and_Markdown_Generation
+COPY . /app/
+
 
 # Upgrade pip, setuptools, and wheel
 RUN pip install --upgrade pip setuptools wheel
 
-# Install backend (API) dependencies
+# Install dependencies
 WORKDIR /app/api
-RUN pip install --no-cache-dir --upgrade --prefer-binary --use-deprecated=legacy-resolver -r requirements.txt
+RUN pip install --no-cache-dir --upgrade --prefer-binary -r requirements.txt
 
-# Expose the default port for FastAPI
-EXPOSE 8080
+# Configure supervisor to run both Redis, FastAPI and the worker
+RUN mkdir -p /var/log/supervisor
+COPY api/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Set the working directory back to API before running FastAPI
-WORKDIR /app/api
+# Set environment variables
+ENV PORT=8080
+ENV PYTHONPATH=/app
 
-# Start FastAPI with auto-reload for development
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Expose the ports for FastAPI and Redis
+EXPOSE 8080 6379
 
-
+# Command to start supervisor which will manage all processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

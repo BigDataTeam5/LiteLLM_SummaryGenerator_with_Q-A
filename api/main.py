@@ -15,10 +15,12 @@ MAX_FILE_SIZE_MB = 5  # Max allowed file size in MB
 MAX_PAGE_COUNT = 5  # Max allowed pages
 import time
 import uuid
+import redis
+import json
 # Add the root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PDF_Extraction_and_Markdown_Generation.docklingextraction import main
-from logger import api_logger,pdf_logger,s3_logger,error_logger,request_logger,log_request,log_error
+from api.logger import api_logger,pdf_logger,s3_logger,error_logger,request_logger,log_request,log_error
 
 #  Now import the parsing functions
 #  Call the Docling conversion function
@@ -40,6 +42,26 @@ s3_client = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY
 )
 
+# Redis Configuration
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+REDIS_DB = int(os.getenv("REDIS_DB", 0))
+
+# Redis client
+redis_client = redis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    password=REDIS_PASSWORD,
+    db=REDIS_DB,
+    decode_responses=True
+)
+
+# Stream names
+SUMMARY_STREAM = "summary_requests"
+QUESTION_STREAM = "question_requests"
+RESULT_STREAM = "llm_results"
+
 # Create FastAPI instance
 app = FastAPI(
     title="Lab Demo API",
@@ -48,6 +70,21 @@ app = FastAPI(
 
 class ScrapeRequest(BaseModel):
     url: str
+
+# LLM Request Models
+class SummaryRequest(BaseModel):
+    request_id: str
+    content: str
+    model: str
+
+class QuestionRequest(BaseModel):
+    request_id: str
+    content: str
+    question: str
+    model: str
+
+# In-memory results cache
+llm_results = {}
 
 
 # Configure CORS
@@ -531,3 +568,161 @@ async def list_image_ref_markdowns():
     except Exception as e:
         log_error("Failed to fetch image-ref markdown files", e)
         raise HTTPException(status_code=500, detail=f"Failed to fetch image-ref markdown files: {str(e)}")
+
+@app.post("/summarize", status_code=202)
+async def summarize_content(request: SummaryRequest):
+    """
+    Submit content for summarization by an LLM through Redis streams.
+    Returns a 202 Accepted response with the request ID for polling results.
+    """
+    api_logger.info(f"Summary request received for model: {request.model}")
+    try:
+        # Add message to Redis summary stream
+        data = {
+            "request_id": request.request_id,
+            "content": request.content,
+            "model": request.model,
+            "timestamp": str(time.time())
+        }
+        
+        # Push to Redis stream
+        redis_client.xadd(SUMMARY_STREAM, data)
+        api_logger.info(f"Summary request {request.request_id} pushed to Redis stream")
+        
+        return {"request_id": request.request_id, "status": "processing"}
+    except Exception as e:
+        log_error(f"Failed to submit summary request", e)
+        raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
+
+@app.post("/ask-question", status_code=202)
+async def ask_question(request: QuestionRequest):
+    """
+    Submit content and a question for an LLM to answer through Redis streams.
+    Returns a 202 Accepted response with the request ID for polling results.
+    """
+    api_logger.info(f"Question request received for model: {request.model}")
+    try:
+        # Add message to Redis question stream
+        data = {
+            "request_id": request.request_id,
+            "content": request.content,
+            "question": request.question,
+            "model": request.model,
+            "timestamp": str(time.time())
+        }
+        
+        # Push to Redis stream
+        redis_client.xadd(QUESTION_STREAM, data)
+        api_logger.info(f"Question request {request.request_id} pushed to Redis stream")
+        
+        return {"request_id": request.request_id, "status": "processing"}
+    except Exception as e:
+        log_error(f"Failed to submit question request", e)
+        raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
+
+@app.get("/get-llm-result/{request_id}")
+async def get_llm_result(request_id: str):
+    """
+    Check if results for a given request ID are available.
+    This endpoint polls Redis for results from LLM processing.
+    """
+    api_logger.info(f"Checking for results for request: {request_id}")
+    try:
+        # Check the in-memory cache first
+        if request_id in llm_results:
+            result = llm_results[request_id]
+            api_logger.info(f"Result found in cache for request: {request_id}")
+            return {"request_id": request_id, "status": "completed", **result}
+        
+        # If not in cache, query Redis stream for results
+        # Get all messages from the result stream
+        messages = redis_client.xread({RESULT_STREAM: '0'}, count=100)
+        
+        if not messages:
+            api_logger.info(f"No results found yet for request: {request_id}")
+            return {"request_id": request_id, "status": "processing"}
+        
+        # Find the result matching our request_id
+        for stream_name, stream_messages in messages:
+            for message_id, data in stream_messages:
+                if data.get("request_id") == request_id:
+                    api_logger.info(f"Result found in Redis for request: {request_id}")
+                    
+                    # If there was an error
+                    if "error" in data:
+                        return {
+                            "request_id": request_id,
+                            "status": "error",
+                            "error": data["error"]
+                        }
+                    
+                    # Cache the result
+                    llm_results[request_id] = data
+                    
+                    # Return the result
+                    return {
+                        "request_id": request_id, 
+                        "status": "completed",
+                        **data
+                    }
+        
+        # No result found yet
+        return {"request_id": request_id, "status": "processing"}
+    except Exception as e:
+        log_error(f"Error retrieving results for request: {request_id}", e)
+        return {
+            "request_id": request_id,
+            "status": "error",
+            "error": str(e)
+        }
+
+# Background task to listen for LLM results from Redis and update the cache
+@app.on_event("startup")
+async def start_result_listener():
+    """
+    Start a background task that listens for new results in the Redis stream
+    and updates the in-memory cache.
+    """
+    import asyncio
+    
+    async def listen_for_results():
+        # Create consumer group if it doesn't exist
+        try:
+            redis_client.xgroup_create(RESULT_STREAM, "fastapi_listeners", mkstream=True)
+        except redis.exceptions.ResponseError:
+            # Group already exists
+            pass
+        
+        api_logger.info("Started Redis result listener")
+        
+        while True:
+            try:
+                # Read new messages from the stream
+                results = redis_client.xreadgroup(
+                    "fastapi_listeners", 
+                    "fastapi_consumer", 
+                    {RESULT_STREAM: ">"}, 
+                    count=1,
+                    block=1000
+                )
+                
+                for stream_name, messages in results:
+                    for message_id, data in messages:
+                        request_id = data.get("request_id")
+                        api_logger.info(f"Received result for request: {request_id}")
+                        
+                        # Add to in-memory cache
+                        llm_results[request_id] = data
+                        
+                        # Acknowledge the message
+                        redis_client.xack(stream_name, "fastapi_listeners", message_id)
+            
+            except Exception as e:
+                log_error("Error in result listener", e)
+            
+            # Wait a bit before next poll
+            await asyncio.sleep(1)
+    
+    # Start the listener task
+    asyncio.create_task(listen_for_results())
+

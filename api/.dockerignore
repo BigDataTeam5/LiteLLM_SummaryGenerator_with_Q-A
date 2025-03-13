@@ -1,19 +1,37 @@
-# Ignore everything by default
-**
+# Version control
+.git
+.gitignore
 
-# Allow only specific folders needed for the backend
-!api/
-!api/**
-!PDF_Extraction_and_Markdown_Generation/
-!PDF_Extraction_and_Markdown_Generation/**
-!WebScraping_Extraction_and_Markdown_Generation/
-!WebScraping_Extraction_and_Markdown_Generation/**
+# Frontend files (will be built separately)
+frontend/
+**/node_modules/
+**/build/
+**/.next/
 
-# Ignore Python cache & virtual environment
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-venv/
-.env
-*.log
+# Python artifacts
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+.Python
+**/env/
+**/venv/
+**/ENV/
+**/.venv/
+
+# IDE files
+.idea/
+.vscode/
+**/*.swp
+**/*.swo
+
+# Test files
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+
+# Temp and log files
+**/logs/
+**/*.log
+**/tmp/
+**/temp/
