@@ -31,7 +31,6 @@ python
 .DS_Store
 Thumbs.db
 *.pdf
-*.png
 !markdown_viewer.png
 !summary_generator.png
 *.jpg
