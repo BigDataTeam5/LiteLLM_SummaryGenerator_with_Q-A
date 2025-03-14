@@ -17,3 +17,5 @@ litellm>=1.0.0
 async-timeout>=4.0.0
 openai
 python-dotenv
+requests
+
