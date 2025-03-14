@@ -1,0 +1,43 @@
+.vercel
+.DS_Store
+.env
+venv/
+api/__pycache__/main.cpython-312.pyc
+api/__pycache__/
+venv/
+.venv/
+__pycache__/
+output.json
+.env
+# Ignore output files and diagrams
+diagram_output/
+output_data/
+extracted_images/
+markdown_images/
+markdown_pages/
+markdown_outputs/
+python-pdfreader.py
+open-sourcepdfreader.py
+update-pythonpdfreader.py
+# Ignore IDE-specific files (PyCharm)
+.idea/
+pdf_extraction_workflow
+# Ignore logs and temporary files
+*.log
+*.tmp
+*.swp
+python
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+*.pdf
+*.png
+!markdown_viewer.png
+!summary_generator.png
+*.jpg
+*.jpeg
+output/
+*.md
+!2408.09869v5-with-image-refs.md
+supervisord.pid
+*.rdb

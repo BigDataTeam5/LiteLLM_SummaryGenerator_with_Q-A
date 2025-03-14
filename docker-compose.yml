@@ -1,0 +1,42 @@
+version: '3'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/app
+    environment:
+      - PORT=8080
+      - REDIS_HOST=localhost
+      - REDIS_PORT=6379
+    networks:
+      - llm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./frontend:/app
+    environment:
+      - FASTAPI_URL=http://api:8080
+    depends_on:
+      - api
+    networks:
+      - llm-network
+
+networks:
+  llm-network:
+    driver: bridge
