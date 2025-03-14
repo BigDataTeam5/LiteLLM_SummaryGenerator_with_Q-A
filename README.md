@@ -3,6 +3,8 @@
 
 ## Assignment Overview
 
+![alt text](image.png)
+
 
 1. **Develop a Streamlit web application** that:
    - Allows selection of previously parsed PDF content or new PDF files.
