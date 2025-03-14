@@ -21,8 +21,8 @@ import asyncio
 import tempfile
 # Add the root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from PDF_Extraction_and_Markdown_Generation.docklingextraction import main
-from api.logger import api_logger, pdf_logger, s3_logger, error_logger, request_logger, log_request, log_error
+from api.docklingextraction import main
+from logger import api_logger, pdf_logger, s3_logger, error_logger, request_logger, log_request, log_error
 from llm_extractor.litellm_query_generator import MODEL_CONFIGS
 import threading
 from worker import main as worker_main

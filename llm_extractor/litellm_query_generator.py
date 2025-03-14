@@ -12,10 +12,12 @@ load_dotenv()
 # Configure LiteLLM with API keys - use provider-specific attributes for each API
 litellm.gemini_key = os.getenv("GEMINI_API_KEY")  # For Gemini as default
 litellm.openai_api_key = os.getenv("OPENAI_API_KEY")  # For OpenAI models
-litellm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")  # For Anthropic models
+litellm.anthropic_api_key = os.getenv("CLAUDE_API_KEY")  # For Anthropic models
 litellm.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")  # For DeepSeek models (note the case)
 litellm.xai_api_key = os.getenv("GROK_API_KEY")  # For Grok models
-
+if litellm.xai_api_key:
+    # Remove any whitespace that might have been accidentally added
+    litellm.xai_api_key = litellm.xai_api_key.strip()
 # Debug output to check API keys
 print(f"API Keys Status:")
 print(f"- Gemini:    {'✓' if litellm.gemini_key else '✗'}")
@@ -52,7 +54,7 @@ MODEL_CONFIGS = {
         "model": "anthropic/claude-3-5-sonnet-20241022",
         "max_input_tokens": 100000,
         "max_output_tokens": 4096,
-        "supports_images": True,
+        "supports_images": False, 
     },
     "grok": {
         "name": "Grok",
@@ -405,7 +407,7 @@ def qa_markdown(
 if __name__ == "__main__":
     # Example usage:
     # Replace with the path to your markdown file
-    markdown_file = "177440d5-3b32-4185-8cc8-95500a9dc783-with-images.md"
+    markdown_file = "Cloud_Run.md"
     
     if os.path.exists(markdown_file):
         # Example of using different models for summary

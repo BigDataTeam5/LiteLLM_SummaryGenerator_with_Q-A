@@ -2,14 +2,8 @@ fastapi
 uvicorn
 python-multipart
 python-dotenv
-PyMuPDF 
-camelot-py
-pypdf2
 bcrypt
 pandas
-azure-ai-formrecognizer 
-azure-core
-azure-ai-documentintelligence
 boto3
 docling
 redis>=4.5.0
