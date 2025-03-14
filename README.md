@@ -1,36 +1,8 @@
 # Assignment 4 - Part 1
 
-## Attestation and Contribution Declaration
-
-**WE ATTEST THAT WE HAVEN’T USED ANY OTHER STUDENTS’ WORK IN OUR ASSIGNMENT AND ABIDE BY THE POLICIES LISTED IN THE STUDENT HANDBOOK.**
-
-### Contribution Breakdown:
-- **Member 1:** 33 1/3%
-- **Member 2:** 33 1/3%
-- **Member 3:** 33 1/3%
-
-### GitHub Links:
-- **Repository Link:** [Insert GitHub Repository Link]
-- **Task Tracking:** [Insert GitHub Issues Link]
-- **Task Ownership:** [List of tasks owned by each team member]
-
----
 
 ## Assignment Overview
 
-You had a wonderful Spring break and returned to your office with memories of beaches and oceans from the beautiful warm city of Boston. You are chilling by the office coffee machine telling your colleagues how great the weather in Boston was the whole of last week and why you enjoy the warm weather in Boston, which you chose as your Spring break destination. Your manager is obviously jealous of all this and asks your team to join her to discuss the next project. She wants you to update the demo you put together for Assignment 1 with additional capabilities! She says that she has been working with customers all week while you were away on your break and wants to turn this project around in a week! You show your pictures from Spring break and say with the warm weather you enjoyed last week, this assignment is a breeze, and you get ready! 🙂 & you are excited to get started!
-
----
-
-## Assignment Enhancement: Streamlit Application with LLM Integration
-
-### Assignment Overview
-
-You are enhancing your existing **Assignment 1** to develop a **Streamlit application** that programmatically invokes **Large Language Models (LLMs)** using **FastAPI** as an intermediary and **LiteLLM** for API management. The application should build upon your existing progress and provide functionality for **summarizing and answering questions** based on uploaded **PDF documents**.
-
----
-
-## Assignment Objectives
 
 1. **Develop a Streamlit web application** that:
    - Allows selection of previously parsed PDF content or new PDF files.
@@ -152,7 +124,21 @@ docker-compose up --build -d
 Contributions are welcome! Please open an **Issue** or submit a **Pull Request** on GitHub.
 
 ---
+## Attestation and Contribution Declaration
 
+**WE ATTEST THAT WE HAVEN’T USED ANY OTHER STUDENTS’ WORK IN OUR ASSIGNMENT AND ABIDE BY THE POLICIES LISTED IN THE STUDENT HANDBOOK.**
+
+### Contribution Breakdown:
+- **Member 1:** 33 1/3%
+- **Member 2:** 33 1/3%
+- **Member 3:** 33 1/3%
+
+### GitHub Links:
+- **Repository Link:** [Insert GitHub Repository Link]
+- **Task Tracking:** [Insert GitHub Issues Link]
+- **Task Ownership:** [List of tasks owned by each team member]
+
+---
 ## License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
