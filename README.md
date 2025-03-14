@@ -1,153 +1,71 @@
+This project enhances Assignment 1 by developing a Streamlit application that integrates Large Language Models (LLMs) via FastAPI and LiteLLM for API management. The application allows users to summarize and query uploaded PDF documents.
 
+Assignment Objectives
 
-# AI Application Workflow
+Develop a Streamlit web application with:
 
-This project outlines the architecture and workflow of an AI application that processes and standardizes data from various sources (PDFs, web scraping, and enterprise services) and stores it in an AWS S3 bucket. The application is built using a combination of Python libraries, FastAPI for the backend, and Streamlit for the frontend.
+The ability to select and load previously parsed PDFs or upload new ones.
 
-## Workflow Diagram
+Integration with GPT-4o, Gemini Flash, DeepSeek, Claude, and Grok via LiteLLM.
 
-Below is the workflow diagram for the AI Application:
+Functionality to summarize documents and answer questions based on PDF content.
 
-![AI Application Workflow](https://github.com/khavnekar-y/AI-Information-Extractor/blob/main/ai_application_workflow%20(2).png)
+Integrate FastAPI to handle backend API interactions:
 
-### Diagram Description:
-1. **User**: The end-user interacts with the application via the Streamlit frontend.
-2. **Streamlit App**: The frontend built using Streamlit.
-3. **FastAPI Backend**: The backend server that handles data processing.
-4. **Data Extraction**:
-   - **PyMuPDF / camelot**: For extracting data from PDF files using Open Source tools.
-   - **Azure Document Intelligence and Adobe API Extract API**: For extracting data from PDF files using Enterprise tools.
-   - **BeautifulSoup**: For web scraping using Open Source Tools.
-   - **APIFY**: For web scraping using Enterprise Tools.
-5. **Standardization Tools**:
-   - **Docling**: A custom tool for standardizing conversions from pdfs to markdowns.
-   - **MarkItDown**: Another custom tool for further data standardization.
-6. **AWS S3 Bucket**: Used for storing processed data.
-7. **Google Cloud Run**: Used for Deploying FastAPI applications
-8. **Streamlit In-builtDeployment**: Used for Deploying Streamlit application for UI/UX. 
+Endpoints:
 
----
+/select_pdfcontent - Retrieve previously parsed PDFs.
 
-## Components
+/upload_pdf - Upload and parse new PDF files.
 
-1. **User**: The end-user interacts with the application via the Streamlit frontend.
-2. **Streamlit Frontend**: A custom frontend built using Streamlit for user interaction.
-3. **FastAPI Backend**: A backend server built using FastAPI to handle data processing and communication with other services.
-4. **Data Extraction**:
-   - **PyPDF2 / pdfplumber**: For extracting data from PDF files.
-   - **BeautifulSoup/Scrapy**: For web scraping.
-   - **Microsoft Document Intelligence**: For enterprise-level document processing.
-5. **Standardization Tools**:
-   - **Docling**: A custom tool for standardizing extracted data.
-   - **MarkItDown**: Another custom tool for further data standardization.
-6. **AWS S3 Bucket**: Used for storing processed data.
+/summarize - Generate summaries of PDF content.
 
----
+/ask_question - Process user questions and return LLM-generated answers.
 
-## Workflow Steps
+Implement Redis streams for inter-service communication.
 
-1. The **User** uploads data via the **Streamlit Frontend**.
-2. The **Frontend** sends the data to the **FastAPI Backend**.
-3. The **Backend** processes the data using one or more of the following:
-   - **PyMuPDF / Camelot** for open source PDF extraction.
-   - **BeautifulSoup / Scrapy** for open source webscraping.
-   - **Microsoft Document Intelligence** for enterprise document processing.
-   - **APIFy** for enterprise webscraping.
-4. The extracted data is standardized using **Docling** in the pdf_process_pipeline and **MarkItDown** for webscraping_pipeline opensource.(Note:APIFy parses and generates markdown)
-5. The processed data is stored in an **AWS S3 Bucket**.
-6. The **Frontend** retrieves the processed data from the **S3 Bucket** and displays it to the **User**.
+Implement LiteLLM API management:
 
----
+Handle LLM API interactions efficiently.
 
-## Prerequisites
+Track token usage and pricing.
 
-- Python 3.7+
-- [Diagrams](https://diagrams.mingrammer.com/) library for generating the workflow diagram.
-- AWS account with S3 bucket access.
-- Streamlit and FastAPI installed for frontend and backend development and also other libraries.
+Implement error handling and logging.
 
----
-## Installation
+Deploy the system using Docker Compose on a cloud platform.
 
-1.Clone the repository:
+Functional Requirements
 
-   ```bash
-   git clone https://github.com/yourusername/ai-application-workflow.git
-   cd ai-application-workflow
-   ```
-2.Create a .env file and add the required credentials:
+Front-End (Streamlit)
 
-   ```bash
-   AWS_ACCESS_KEY_ID=your_aws_access_key
-   AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-   AWS_REGION=your_aws_region
-   AZURE_DOCUMENT_INTELLIGENCE_KEY=your_azure_key
-   AZURE_FORM_RECOGNIZER_ENDPOINT=aws_form_recognizer_endpoint
-   APIFY_TOKEN=your_apify_token
-   ```
-   
-3. Ensure you have the custom icons (`microsoft.png`, `docling.png`, `markitdown.png`, `streamlit.png`) in the `./icons/` directory.
-4. Generate the workflow diagram:
-   ```bash
-   python generate_diagram.py
-   ```
+Select preferred LLM model (e.g., GPT-4o, Gemini Flash, DeepSeek, Claude, Grok).
 
-4.Install dependencies:
-create venv inside api and frotend folder
-```bash
-cd api
-python -m venv venv
-venv/Scripts/activate
-pip install -r requirements
-```
-in new terminal
-```bash
-cd frontend
-python -m venv venv
-venv/Scripts/activate
-pip install -r requirements
-```
-## Usage for Testing Locally
+Load previously parsed PDF content or upload new PDFs.
 
-1. Run the FastAPI backend:
-   ```bash
-   uvicorn main:app --reload --host 0.0.0.0 --port 8080  
-   ```
+Provide text input for user queries.
 
-2. Run the Streamlit frontend:
-   in another term
-   ```bash
-   streamlit run frontend.py
-   ```
+Summarize document content with a button-triggered function.
 
-4. Open your browser and navigate to `http://localhost:8501` to interact with the application.
+Display summaries and answers clearly.
 
----
-## Deployment Strategies to Gcloud:
-1.Dockerise
-   a.There are 2 DockerFiles in the frontend(Streamlit) and api(FASTAPI) folders.
-   b.After installing Docker Desktop,create the docker images using the following commands
-   create the fast api docker image
-   before that run the following commands to authorize Google Cloud SDK.And make sure you run these command in the root directory of the project.
-   ```bash
-      
-   ```
-   
-## Contributing
+Back-End (FastAPI)
 
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+Implement REST API endpoints for handling PDF selection, upload, summarization, and Q&A.
 
----
+Ensure structured JSON responses.
 
-## License
+Use Redis streams for efficient inter-service communication.
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+LiteLLM Integration
 
----
+Manage API interactions for various LLM models.
 
-### Notes:
-- Replace `yourusername` in the repository URL with your actual GitHub username.
-- Ensure the `generate_diagram.py` script is created to generate the workflow diagram.
-- Update the `LICENSE` file if you choose a different license.
+Document model usage and track token-based pricing.
 
-Let me know if you need further assistance!
+Implement robust error handling and logging.
+
+Deployment
+
+Docker Compose-based deployment.
+
+Host services on cloud infrastructure.
