@@ -10,11 +10,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configure LiteLLM with API keys - use provider-specific attributes for each API
-litellm.gemini_key = os.getenv("GEMINI_API_KEY", "")  # For Gemini as default
-litellm.openai_api_key = os.getenv("openai_api_key", "")  # For OpenAI models
-litellm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")  # For Anthropic models
-litellm.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")  # For DeepSeek models (note the case)
-litellm.xai_api_key = os.getenv("xai_api_key", "")  # For Grok models
+litellm.gemini_key = os.getenv("GEMINI_API_KEY")  # For Gemini as default
+litellm.openai_api_key = os.getenv("OPENAI_API_KEY")  # For OpenAI models
+litellm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")  # For Anthropic models
+litellm.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")  # For DeepSeek models (note the case)
+litellm.xai_api_key = os.getenv("GROK_API_KEY")  # For Grok models
 
 # Debug output to check API keys
 print(f"API Keys Status:")
@@ -144,7 +144,7 @@ def create_llm_response_from_markdown(
     task_type: Literal["summary", "qa"] = "summary",
     question: Optional[str] = None,
     max_images: int = 5
-) -> str:
+) -> Dict[str, Any]:  # Changed return type to Dict to include token usage
     """
     Generate a response from markdown content using the specified model.
     
@@ -156,15 +156,15 @@ def create_llm_response_from_markdown(
         max_images: Maximum number of images to include
         
     Returns:
-        A string containing the response
+        A dictionary containing the response and token usage information
     """
     try:
         # Validate inputs
         if task_type == "qa" and not question:
-            return "Error: Question must be provided for Q&A task type."
+            return {"content": "Error: Question must be provided for Q&A task type.", "usage": {"total_tokens": 0}}
             
         if model_id not in MODEL_CONFIGS:
-            return f"Error: Unsupported model '{model_id}'. Choose from: {', '.join(MODEL_CONFIGS.keys())}"
+            return {"content": f"Error: Unsupported model '{model_id}'. Choose from: {', '.join(MODEL_CONFIGS.keys())}", "usage": {"total_tokens": 0}}
         
         model_config = MODEL_CONFIGS[model_id]
         
@@ -184,11 +184,11 @@ def create_llm_response_from_markdown(
             api_key_status = True
             
         if not api_key_status:
-            return f"Error: API key not found for {model_prefix}. Please check your .env file."
+            return {"content": f"Error: API key not found for {model_prefix}. Please check your .env file.", "usage": {"total_tokens": 0}}
         
         # Check if file exists
         if not os.path.exists(markdown_path):
-            return f"Error: Markdown file not found at {markdown_path}"
+            return {"content": f"Error: Markdown file not found at {markdown_path}", "usage": {"total_tokens": 0}}
             
         # Process the markdown file
         content = process_markdown_with_images(markdown_path)
@@ -268,60 +268,95 @@ def create_llm_response_from_markdown(
             max_tokens=model_config["max_output_tokens"]
         )
         
-        # Extract and return the response
+        # Extract and return the response with token usage
         if response and response.choices and response.choices[0].message.content:
-            return response.choices[0].message.content
+            # Extract token usage information
+            usage_info = {
+                "prompt_tokens": response.usage.prompt_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'prompt_tokens') else 0,
+                "completion_tokens": response.usage.completion_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'completion_tokens') else 0,
+                "total_tokens": response.usage.total_tokens if hasattr(response, 'usage') and hasattr(response.usage, 'total_tokens') else 0
+            }
+            
+            return {
+                "content": response.choices[0].message.content,
+                "usage": usage_info
+            }
         else:
-            return f"Error: No response generated from {model_config['name']}."
+            return {
+                "content": f"Error: No response generated from {model_config['name']}.",
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            }
     
     except Exception as e:
-        return f"Error generating response: {str(e)}"
-
+        return {
+            "content": f"Error generating response: {str(e)}",
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        }
+    
 def summarize_markdown(
     markdown_path: str, 
     model_id: str = "gemini",
     output_dir: Optional[str] = None
-) -> str:
+) -> Dict[str, Any]:
     """
-    Summarize markdown content using the specified model.
+    Generate a summary for a markdown file.
     
     Args:
         markdown_path: Path to the markdown file
-        model_id: ID of the model to use
+        model_id: Model ID to use for summarization
         output_dir: Optional directory to save the summary
         
     Returns:
-        The generated summary
+        Dictionary with the generated summary and token usage information
     """
     print(f"Generating summary for markdown file: {markdown_path} using {MODEL_CONFIGS[model_id]['name']}")
     
+    # Verify that markdown_path exists and is a file
+    if not os.path.isfile(markdown_path):
+        error_msg = f"File not found: {markdown_path}"
+        print(error_msg)
+        return {"summary": f"Error: {error_msg}", "usage": {"total_tokens": 0}}
+    
+    # Set up the output directory
     if not output_dir:
-        # Use the same directory as the markdown file
         output_dir = os.path.dirname(os.path.abspath(markdown_path))
     
-    # Create the output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    # Ensure output_dir is an absolute path and valid
+    if not os.path.isabs(output_dir):
+        output_dir = os.path.abspath(output_dir)
     
-    # Generate the summary
-    summary = create_llm_response_from_markdown(markdown_path, model_id, task_type="summary")
+    try:
+        # Create the output directory safely
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate the summary
+        response = create_llm_response_from_markdown(markdown_path, model_id, task_type="summary")
+        
+        summary = response["content"]
+        usage = response["usage"]
+        
+        # Get the original filename without extension
+        markdown_filename = Path(markdown_path).stem
+        
+        # Save the summary to a file
+        summary_path = os.path.join(output_dir, f"{markdown_filename}_{model_id}_summary.md")
+        with open(summary_path, "w", encoding="utf-8") as f:
+            f.write(summary)
+        
+        print(f"Summary saved to: {summary_path}")
+        return {"summary": summary, "usage": usage}
     
-    # Get the original filename without extension
-    markdown_filename = Path(markdown_path).stem
-    
-    # Save the summary to a file
-    summary_path = os.path.join(output_dir, f"{markdown_filename}_{model_id}_summary.md")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        f.write(summary)
-    
-    print(f"Summary saved to: {summary_path}")
-    return summary
+    except Exception as e:
+        error_msg = f"Error generating summary: {str(e)}"
+        print(error_msg)
+        return {"summary": f"Error: {error_msg}", "usage": {"total_tokens": 0}}
 
 def qa_markdown(
     markdown_path: str, 
     question: str,
     model_id: str = "gemini",
     output_dir: Optional[str] = None
-) -> str:
+) -> Dict[str, Any]:
     """
     Answer a question based on markdown content using the specified model.
     
@@ -332,7 +367,7 @@ def qa_markdown(
         output_dir: Optional directory to save the answer
         
     Returns:
-        The generated answer
+        Dictionary with the generated answer and token usage information
     """
     print(f"Answering question for markdown file: {markdown_path} using {MODEL_CONFIGS[model_id]['name']}")
     print(f"Question: {question}")
@@ -345,12 +380,15 @@ def qa_markdown(
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate the answer
-    answer = create_llm_response_from_markdown(
+    response = create_llm_response_from_markdown(
         markdown_path, 
         model_id, 
         task_type="qa", 
         question=question
     )
+    
+    answer = response["content"]
+    usage = response["usage"]
     
     # Get the original filename without extension and sanitize question for filename
     markdown_filename = Path(markdown_path).stem
@@ -362,16 +400,16 @@ def qa_markdown(
         f.write(f"# Question\n\n{question}\n\n# Answer\n\n{answer}")
     
     print(f"Answer saved to: {answer_path}")
-    return answer
+    return {"answer": answer, "question": question, "usage": usage}
 
 if __name__ == "__main__":
     # Example usage:
     # Replace with the path to your markdown file
-    markdown_file = "2408.09869v5-with-image-refs.md"
+    markdown_file = "177440d5-3b32-4185-8cc8-95500a9dc783-with-images.md"
     
     if os.path.exists(markdown_file):
         # Example of using different models for summary
-        for model in ["deepseek"]:
+        for model in ["gemini","deepseek","claude","grok","gpt4o"]:
             try:
                 summary = summarize_markdown(markdown_file, model_id=model)
                 print(f"\n{MODEL_CONFIGS[model]['name']} Summary Preview:")
@@ -380,9 +418,9 @@ if __name__ == "__main__":
                 print(f"Error with {model}: {str(e)}")
         
         # Example of Q&A
-        # question = "What are the main findings of this document?"
-        # answer = qa_markdown(markdown_file, question, model_id="gemini")
-        # print("\nQ&A Preview:")
-        # print(answer[:500] + "..." if len(answer) > 500 else answer)
+        question = "What are the risks mentioned in the Q4 report?"
+        answer = qa_markdown(markdown_file, question, model_id="gemini")
+        print("\nQ&A Preview:")
+        print(answer[:500] + "..." if len(answer) > 500 else answer)
     else:
         print(f"Markdown file not found: {markdown_file}")

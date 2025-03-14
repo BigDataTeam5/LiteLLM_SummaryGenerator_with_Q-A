@@ -170,6 +170,71 @@ async def root() -> Dict[str, str]:
         "version": "1.0.0",
         "documentation": "/docs"
     }
+# Start the worker process on application startup
+@app.on_event("startup")
+async def startup_event():
+    # Start the worker process in the background
+    worker_thread = threading.Thread(target=start_worker_process, daemon=True)
+    worker_thread.start()
+    api_logger.info("LLM worker process started in background thread")
+
+# Background task to listen for LLM results from Redis and update the cache
+@app.on_event("startup")
+async def start_result_listener():
+    """
+    Start a background task that listens for new results in the Redis stream
+    and updates the in-memory cache.
+    """
+    import asyncio
+    
+    async def listen_for_results():
+        # Create consumer group if it doesn't exist
+        try:
+            redis_client.xgroup_create(RESULT_STREAM, "fastapi_listeners", mkstream=True)
+        except redis.exceptions.ResponseError:
+            # Group already exists
+            pass
+        
+        api_logger.info("Started Redis result listener")
+        
+        while True:
+            try:
+                # Read new messages from the stream
+                results = redis_client.xreadgroup(
+                    "fastapi_listeners", 
+                    "fastapi_consumer", 
+                    {RESULT_STREAM: ">"}, 
+                    count=1,
+                    block=1000
+                )
+                
+                if results:
+                    for stream_name, messages in results:
+                        for message_id, data in messages:
+                            request_id = data.get("request_id")
+                            if request_id:
+                                api_logger.info(f"Received result for request: {request_id}")
+                                
+                                # Extract result data
+                                result_data = {}
+                                for key, value in data.items():
+                                    if key != "request_id":  # We add this separately
+                                        result_data[key] = value
+                                
+                                # Add to in-memory cache
+                                llm_results[request_id] = result_data
+                                
+                                # Acknowledge the message
+                                redis_client.xack(stream_name, "fastapi_listeners", message_id)
+            
+            except Exception as e:
+                log_error("Error in result listener", e)
+            
+            # Wait a bit before next poll
+            await asyncio.sleep(1)
+    
+    # Start the listener task
+    asyncio.create_task(listen_for_results())
 
 
 # ✅ Favicon Route
@@ -532,7 +597,7 @@ async def list_image_ref_markdowns():
             raise HTTPException(status_code=404, detail="No markdown subfolders found in S3.")
 
         # Collect all image-ref markdown files from all folders
-        image_ref_files = []
+        image_md_files = []
 
         for folder in subfolders:
             s3_logger.info(f"Searching for image-ref markdowns in folder: {folder}")
@@ -547,8 +612,8 @@ async def list_image_ref_markdowns():
                 file_key = obj["Key"]
                 file_name = file_key.split("/")[-1]
                 
-                if file_key.endswith(".md") and "image-ref" in file_name:
-                    s3_logger.info(f"Found image-ref markdown: {file_key}")
+                if file_key.endswith(".md") and "-with-images." in file_name:
+                    s3_logger.info(f"Found markdown with images: {file_key}")
                     
                     # Generate pre-signed URL for the file
                     download_url = s3_client.generate_presigned_url(
@@ -558,7 +623,7 @@ async def list_image_ref_markdowns():
                     )
                     
                     # Add to our collection
-                    image_ref_files.append({
+                    image_md_files.append({
                         "folder": folder,
                         "file_name": file_name,
                         "file_key": file_key,
@@ -568,18 +633,18 @@ async def list_image_ref_markdowns():
                     
                     s3_logger.info(f"Generated download link for: {file_key}")
 
-        if not image_ref_files:
+        if not image_md_files:
             api_logger.warning("No image-ref markdown files found in any folder")
             raise HTTPException(status_code=404, detail="No image-ref markdown files found.")
 
         # Sort by last modified date (newest first)
-        image_ref_files.sort(key=lambda x: x["last_modified"], reverse=True)
+        image_md_files.sort(key=lambda x: x["last_modified"], reverse=True)
         
         return {
-            "message": f"Found {len(image_ref_files)} image-ref markdown files across {len(subfolders)} folders",
-            "file_count": len(image_ref_files),
+            "message": f"Found {len(image_md_files)} image-ref markdown files across {len(subfolders)} folders",
+            "file_count": len(image_md_files),
             "folder_count": len(subfolders),
-            "image_ref_markdowns": image_ref_files
+            "image_ref_markdowns": image_md_files
         }
 
     except Exception as e:
@@ -706,7 +771,14 @@ async def get_llm_result(request_id: str):
                     result_data = {}
                     for key, value in data.items():
                         if key != "request_id":  # We add this separately
-                            result_data[key] = value
+                            # Handle usage data specially - convert from JSON string back to dict
+                            if key == "usage" and value.startswith("{"):
+                                try:
+                                    result_data[key] = json.loads(value)
+                                except json.JSONDecodeError:
+                                    result_data[key] = value
+                            else:
+                                result_data[key] = value
                     
                     # Cache the result
                     llm_results[request_id] = result_data
@@ -727,73 +799,6 @@ async def get_llm_result(request_id: str):
             "status": "error",
             "error": str(e)
         }
-
-# Start the worker process on application startup
-@app.on_event("startup")
-async def startup_event():
-    # Start the worker process in the background
-    worker_thread = threading.Thread(target=start_worker_process, daemon=True)
-    worker_thread.start()
-    api_logger.info("LLM worker process started in background thread")
-
-# Background task to listen for LLM results from Redis and update the cache
-@app.on_event("startup")
-async def start_result_listener():
-    """
-    Start a background task that listens for new results in the Redis stream
-    and updates the in-memory cache.
-    """
-    import asyncio
-    
-    async def listen_for_results():
-        # Create consumer group if it doesn't exist
-        try:
-            redis_client.xgroup_create(RESULT_STREAM, "fastapi_listeners", mkstream=True)
-        except redis.exceptions.ResponseError:
-            # Group already exists
-            pass
-        
-        api_logger.info("Started Redis result listener")
-        
-        while True:
-            try:
-                # Read new messages from the stream
-                results = redis_client.xreadgroup(
-                    "fastapi_listeners", 
-                    "fastapi_consumer", 
-                    {RESULT_STREAM: ">"}, 
-                    count=1,
-                    block=1000
-                )
-                
-                if results:
-                    for stream_name, messages in results:
-                        for message_id, data in messages:
-                            request_id = data.get("request_id")
-                            if request_id:
-                                api_logger.info(f"Received result for request: {request_id}")
-                                
-                                # Extract result data
-                                result_data = {}
-                                for key, value in data.items():
-                                    if key != "request_id":  # We add this separately
-                                        result_data[key] = value
-                                
-                                # Add to in-memory cache
-                                llm_results[request_id] = result_data
-                                
-                                # Acknowledge the message
-                                redis_client.xack(stream_name, "fastapi_listeners", message_id)
-            
-            except Exception as e:
-                log_error("Error in result listener", e)
-            
-            # Wait a bit before next poll
-            await asyncio.sleep(1)
-    
-    # Start the listener task
-    asyncio.create_task(listen_for_results())
-
 
 @app.get("/llm/models", response_model=LLMModelsResponse)
 async def list_available_models():

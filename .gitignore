@@ -9,6 +9,7 @@ venv/
 __pycache__/
 output.json
 .env
+*.pyc
 # Ignore output files and diagrams
 diagram_output/
 output_data/
@@ -32,6 +33,7 @@ python
 Thumbs.db
 *.pdf
 *.png
+*.zip
 !markdown_viewer.png
 !summary_generator.png
 *.jpg
@@ -41,3 +43,4 @@ output/
 !2408.09869v5-with-image-refs.md
 supervisord.pid
 *.rdb
+!worker_file_quickstart.md
