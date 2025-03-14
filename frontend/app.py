@@ -5,8 +5,8 @@ import sys
 import os
 import json
 import uuid
+import toml
 sys.path.append("LLM_Interactor")
-# from logger import api_logger
 
 # Streamlit UI
 st.set_page_config(page_title="PDF-to-LLM Assistant", layout="wide")
@@ -41,11 +41,14 @@ if "text_summary_result" not in st.session_state:
 if "processing_text_summary" not in st.session_state:
     st.session_state.processing_text_summary = False
 
-# FastAPI Base URL - Make it configurable with environment variable support
+# FastAPI Base URL - Simple configuration
 if "fastapi_url" not in st.session_state:
-    # Get the FastAPI URL from environment variable if available, else use default
-    default_url = os.environ.get("FASTAPI_URL", "http://localhost:8080")
-    st.session_state.fastapi_url = default_url
+    config_path = os.path.join(os.path.dirname(__file__), ".streamlit", "config.toml")
+    if os.path.exists(config_path):
+        config_data = toml.load(config_path)
+        st.session_state.fastapi_url = config_data.get("connections", {}).get("FASTAPI_URL")
+            
+                
 if "api_connected" not in st.session_state:
     st.session_state.api_connected = True
 if "markdown_summaries" not in st.session_state:
@@ -74,34 +77,6 @@ def update_api_endpoints():
 
 # Initial setup of API endpoints
 update_api_endpoints()
-
-# Function to test API connection - Add support for potential backend health endpoints
-def test_api_connection():
-    try:
-        
-        response = requests.get(f"{st.session_state.fastapi_url}/", timeout=5)
-        if response.status_code == 200:
-            st.session_state.api_connected = True
-            return True, "Connection successful!"
-        
-        # If root fails, try the health endpoint
-        response = requests.get(f"{st.session_state.fastapi_url}/health", timeout=5)
-        if response.status_code == 200:
-            st.session_state.api_connected = True
-            return True, "Connection successful via health endpoint!"
-            
-        st.session_state.api_connected = False
-        return False, f"API responded with status code: {response.status_code}"
-    except requests.exceptions.ConnectionError:
-        st.session_state.api_connected = False
-        return False, f"Connection error: Could not connect to the FastAPI server at {st.session_state.fastapi_url}. Please check the URL and ensure the server is running."
-    except requests.exceptions.Timeout:
-        st.session_state.api_connected = False
-        return False, "Connection timeout: The request timed out. Server might be overloaded or unavailable."
-    except Exception as e:
-        st.session_state.api_connected = False
-        return False, f"Unexpected error: {str(e)}"
-# Function to calculate token costs with better error handling
 def calculate_token_cost(model_id, usage_data):
     """Calculate the cost of token usage based on model rates"""
     # Define pricing per 1000 tokens for different models (approximate as of 2025)
@@ -338,9 +313,11 @@ def submit_summarization(content, model):
         with st.spinner("⏳ Generating summary with LLM... This may take a moment."):
             # Set processing state
             st.session_state.processing_summary = True
+            request_id = f"summary_{uuid.uuid4()}"
             
             # Prepare the request payload
             payload = {
+                "request_id": request_id,
                 "content": content,
                 "model": model,
                 "content_type": "markdown"
@@ -348,7 +325,7 @@ def submit_summarization(content, model):
             
             # Submit to API
             response = requests.post(
-                st.session_state.SUMMARIZE_API,  # Fixed: Use the correct API endpoint
+                st.session_state.SUMMARIZE_API, 
                 json=payload
             )
             
@@ -356,12 +333,7 @@ def submit_summarization(content, model):
                 # Got a job ID, need to poll for result
                 job_id = response.json().get("request_id")
                 result = poll_for_llm_result(job_id)
-                
-                # Debug token usage data
-                st.write(f"DEBUG: Raw result from API: {result}")
-                if result and "usage" in result:
-                    st.write(f"DEBUG: Token usage from API: {result['usage']}")
-                
+                                
                 if result and "error" not in result:
                     # Store the summary in session state
                     st.session_state.summary_result = result
@@ -434,13 +406,13 @@ def poll_for_llm_result(job_id, max_retries=15, interval=2):
     while retries < max_retries:
         try:
             # Calculate progress percentage
-            progress = min(retries / max_retries, 0.95)  # Cap at 95% until complete
+            progress = min(retries / max_retries, 0.95)  
             progress_bar.progress(progress)
             
             # Check result status
             response = requests.get(
                 f"{st.session_state.GET_LLM_RESULT_API}/{job_id}",
-                timeout=10
+                timeout=15
             )
             
             if response.status_code == 200:
@@ -491,29 +463,29 @@ if "available_models" not in st.session_state:
 with st.sidebar:
     st.subheader("API Configuration")
     
-    # API URL configuration
-    api_url = st.text_input("FastAPI URL", value=st.session_state.fastapi_url)
+    # # API URL configuration
+    # api_url = st.text_input("FastAPI URL", value=st.session_state.fastapi_url)
     
-    if api_url != st.session_state.fastapi_url:
-        st.session_state.fastapi_url = api_url
-        update_api_endpoints()
-        st.session_state.api_connected = False
+    # if api_url != st.session_state.fastapi_url:
+    #     st.session_state.fastapi_url = api_url
+    #     update_api_endpoints()
+    #     st.session_state.api_connected = False
     
-    # Test connection button
-    if st.button("Test Connection"):
-        success, message = test_api_connection()
-        if success:
-            st.success(message)
-        else:
-            st.error(message)
+    # # Test connection button
+    # if st.button("Test Connection"):
+    #     success, message = test_api_connection()
+    #     if success:
+    #         st.success(message)
+    #     else:
+    #         st.error(message)
     
-    # Display connection status
-    if st.session_state.api_connected:
-        st.success("✅ Connected to FastAPI")
-    else:
-        st.warning("❌ Not connected to FastAPI")
+    # # Display connection status
+    # if st.session_state.api_connected:
+    #     st.success("✅ Connected to FastAPI")
+    # else:
+    #     st.warning("❌ Not connected to FastAPI")
     
-    st.divider()
+    # st.divider()
     
     st.subheader("Select Options")
 

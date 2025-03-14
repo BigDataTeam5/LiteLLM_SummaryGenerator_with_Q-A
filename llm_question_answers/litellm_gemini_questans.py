@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Configure LiteLLM with Claude API key
-litellm.api_key = os.getenv("ANTHROPIC_API_KEY")
+# Configure LiteLLM with your Gemini API key
+litellm.api_key = os.getenv("GEMINI_API_KEY")
 
 def encode_image_to_base64(image_path: str) -> str:
     """Convert an image file to base64 encoding."""
@@ -87,19 +87,28 @@ def process_markdown_with_images(markdown_path: str) -> Dict[str, Any]:
         "image_paths": image_paths
     }
 
-def create_claude_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
+def create_gemini_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
     """
-    Generate a summary of markdown content using Claude.
+    Generate a summary of markdown content using Gemini.
+    
+    Args:
+        markdown_path: Path to the markdown file
+        max_images: Maximum number of images to include (Gemini has input limits)
+        
+    Returns:
+        A string containing the summary
     """
     try:
+        # Check if file exists
         if not os.path.exists(markdown_path):
             return f"Error: Markdown file not found at {markdown_path}"
             
+        # Process the markdown file
         content = process_markdown_with_images(markdown_path)
         
         # Prepare the prompt
         prompt_text = f"""
-        Please create a comprehensive summary of the following document content.
+        I need you to create a comprehensive summary of the following document content.
         
         The content is from a Markdown file that includes text and may reference images.
         Please analyze all the provided information and create a well-structured summary that:
@@ -110,47 +119,58 @@ def create_claude_summary_from_markdown(markdown_path: str, max_images: int = 5)
         4. Describes what's shown in the images
         5. Organizes the information in a logical flow
         
-        Document content:
+        Here's the markdown content:
+        
         {content["text_content"]}
         """
         
-        # Prepare media content for Claude
-        media_content = []
-        for img_path in content["image_paths"][:max_images]:
-            try:
-                base64_image = encode_image_to_base64(img_path)
-                media_content.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/jpeg",
-                        "data": base64_image
+        # Prepare the messages with text and images
+        messages = [{"role": "user", "content": prompt_text}]
+        
+        # Add images if available (limited to max_images)
+        image_paths = content["image_paths"][:max_images]  # Limit number of images
+        
+        if image_paths:
+            # For multimodal input with images
+            image_parts = []
+            for img_path in image_paths:
+                try:
+                    base64_image = encode_image_to_base64(img_path)
+                    image_parts.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    })
+                except Exception as e:
+                    print(f"Error encoding image {img_path}: {e}")
+            
+            # Add image parts to the message
+            if image_parts:
+                messages = [
+                    {
+                        "role": "user", 
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            *image_parts
+                        ]
                     }
-                })
-            except Exception as e:
-                print(f"Error encoding image {img_path}: {e}")
-        
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt_text},
-                    *media_content
                 ]
-            }
-        ]
         
+        # Call Gemini model using LiteLLM - use the newer 1.5 models
+        # Use gemini-1.5-flash for both text and image inputs
         response = litellm.completion(
-            model="claude-3-opus-20240229",  # Using Claude 3
+            model="gemini/gemini-1.5-flash",  # Using the newer model
             messages=messages,
             temperature=0.3,
             max_tokens=4000
         )
         
+        # Extract and return the summary
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from Claude."
+            return "Error: No response generated from Gemini."
     
     except Exception as e:
         return f"Error generating summary: {str(e)}"
@@ -176,102 +196,31 @@ def summarize_markdown(markdown_path: str, output_dir: Optional[str] = None) -> 
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate the summary
-    summary = create_claude_summary_from_markdown(markdown_path)
+    summary = create_gemini_summary_from_markdown(markdown_path)
     
     # Get the original filename without extension
     markdown_filename = Path(markdown_path).stem
     
     # Save the summary to a file
-    summary_path = os.path.join(output_dir, f"{markdown_filename}_claude_summary.md")
+    summary_path = os.path.join(output_dir, f"{markdown_filename}_gemini_summary.md")
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary)
     
     print(f"Summary saved to: {summary_path}")
     return summary
 
-def is_safe_prompt(prompt: str) -> bool:
-    """
-    Check if a prompt is safe to process.
-    Returns True if safe, False if potentially dangerous.
-    """
-    # Lowercase for consistent checking
-    prompt_lower = prompt.lower()
-    
-    # Dangerous patterns to check for
-    dangerous_patterns = [
-        # System/Security
-        r'system\(.*\)',
-        r'exec\(.*\)',
-        r'eval\(.*\)',
-        r'sudo',
-        r'rm -rf',
-        # Harmful Content
-        r'hack',
-        r'exploit',
-        r'vulnerability',
-        r'malware',
-        r'virus',
-        # Personal/Sensitive Data
-        r'password',
-        r'credit card',
-        r'ssn',
-        r'social security',
-        # Inappropriate Content
-        r'porn',
-        r'nsfw',
-        r'explicit',
-        # Harmful Behaviors
-        r'suicide',
-        r'self-harm',
-        r'kill',
-        r'weapon',
-        # Discrimination
-        r'racist',
-        r'nazi',
-        r'hate speech'
-    ]
-    
-    # Check for dangerous patterns
-    for pattern in dangerous_patterns:
-        if re.search(pattern, prompt_lower):
-            return False
-    
-    return True
-
-def validate_and_sanitize_prompt(prompt: str) -> tuple[bool, str]:
-    """
-    Validate and sanitize a user prompt.
-    Returns (is_safe, message) tuple.
-    """
-    # Check for empty or whitespace
-    if not prompt or prompt.isspace():
-        return False, "Prompt cannot be empty."
-    
-    # Check length limits
-    if len(prompt) > 1000:
-        return False, "Prompt is too long. Please limit to 1000 characters."
-    
-    # Check for safe content
-    if not is_safe_prompt(prompt):
-        return False, "I apologize, but I cannot process this prompt as it may contain inappropriate or dangerous content."
-    
-    # Sanitize the prompt
-    sanitized = re.sub(r'[<>]', '', prompt)  # Remove potential HTML/XML tags
-    sanitized = ' '.join(sanitized.split())   # Normalize whitespace
-    
-    return True, sanitized
-
 def answer_question_about_markdown(markdown_path: str, question: str, max_images: int = 5) -> str:
     """
-    Generate an answer to a specific question about the markdown content using Claude.
-    """
-    # Validate the question first
-    is_safe, result = validate_and_sanitize_prompt(question)
-    if not is_safe:
-        return result
-        
-    question = result  # Use sanitized question
+    Generate an answer to a specific question about the markdown content using Gemini.
     
+    Args:
+        markdown_path: Path to the markdown file
+        question: User's question about the content
+        max_images: Maximum number of images to include
+        
+    Returns:
+        A string containing the answer
+    """
     try:
         if not os.path.exists(markdown_path):
             return f"Error: Markdown file not found at {markdown_path}"
@@ -282,8 +231,6 @@ def answer_question_about_markdown(markdown_path: str, question: str, max_images
         Please answer the following question about the document content.
         Use only the information provided in the document to answer.
         If the answer cannot be found in the document, please say so.
-        Avoid generating any harmful, inappropriate, or dangerous content.
-        If the question asks for harmful content, decline to answer.
 
         Document content:
         {content["text_content"]}
@@ -291,34 +238,37 @@ def answer_question_about_markdown(markdown_path: str, question: str, max_images
         Question: {question}
         """
         
-        # Prepare media content for Claude
-        media_content = []
-        for img_path in content["image_paths"][:max_images]:
-            try:
-                base64_image = encode_image_to_base64(img_path)
-                media_content.append({
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/jpeg",
-                        "data": base64_image
-                    }
-                })
-            except Exception as e:
-                print(f"Error encoding image {img_path}: {e}")
+        messages = [{"role": "user", "content": prompt_text}]
         
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt_text},
-                    *media_content
+        image_paths = content["image_paths"][:max_images]
+        
+        if image_paths:
+            image_parts = []
+            for img_path in image_paths:
+                try:
+                    base64_image = encode_image_to_base64(img_path)
+                    image_parts.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    })
+                except Exception as e:
+                    print(f"Error encoding image {img_path}: {e}")
+            
+            if image_parts:
+                messages = [
+                    {
+                        "role": "user", 
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            *image_parts
+                        ]
+                    }
                 ]
-            }
-        ]
         
         response = litellm.completion(
-            model="claude-3-5-sonnet-20241022",
+            model="gemini/gemini-1.5-flash",
             messages=messages,
             temperature=0.3,
             max_tokens=4000
@@ -327,13 +277,13 @@ def answer_question_about_markdown(markdown_path: str, question: str, max_images
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from Claude."
+            return "Error: No response generated from Gemini."
     
     except Exception as e:
         return f"Error generating answer: {str(e)}"
 
 if __name__ == "__main__":
-    markdown_file = "2408.09869v5-with-image-refs.md"
+    markdown_file = "Cloud_Run.md"
     
     if not os.path.exists(markdown_file):
         print(f"Markdown file not found: {markdown_file}")
@@ -341,17 +291,11 @@ if __name__ == "__main__":
 
     while True:
         print("\nEnter your question about the document (or 'quit' to exit):")
-        question = input("> ").strip()
+        question = input("> ")
         
         if question.lower() in ['quit', 'exit', 'q']:
             break
-        
-        # Validate the question
-        is_safe, result = validate_and_sanitize_prompt(question)
-        if not is_safe:
-            print("\nWarning:", result)
-            continue
             
-        answer = answer_question_about_markdown(markdown_file, result)
+        answer = answer_question_about_markdown(markdown_file, question)
         print("\nAnswer:")
         print(answer)

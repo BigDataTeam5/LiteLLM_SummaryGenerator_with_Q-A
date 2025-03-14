@@ -7,6 +7,7 @@ api/__pycache__/
 venv/
 .venv/
 __pycache__/
+.pytest_cache/
 output.json
 .env
 *.pyc
@@ -32,15 +33,12 @@ python
 .DS_Store
 Thumbs.db
 *.pdf
-*.png
 *.zip
 !markdown_viewer.png
 !summary_generator.png
-*.jpg
-*.jpeg
 output/
 *.md
 !2408.09869v5-with-image-refs.md
+!worker_file_quickstart.md
 supervisord.pid
 *.rdb
-!worker_file_quickstart.md

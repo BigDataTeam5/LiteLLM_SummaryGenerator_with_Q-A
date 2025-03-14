@@ -1,0 +1,79 @@
+# =============================
+# General Version Control
+# =============================
+.git/
+.gitignore
+
+# =============================
+# Frontend (Will be built separately)
+# =============================
+frontend/
+**/node_modules/
+**/build/
+**/.next/
+
+# =============================
+# Python Artifacts
+# =============================
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+**/*.py[cod]
+**/*$py.class
+**/*.so
+.Python
+**/env/
+**/venv/
+**/ENV/
+**/.venv/
+*.rdb
+
+# =============================
+# Editor and IDE Files
+# =============================
+.idea/
+.vscode/
+**/*.swp
+**/*.swo
+*.iml
+
+# =============================
+# Test and Coverage Files
+# =============================
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+coverage/
+tests/
+
+# =============================
+# Temporary and Log Files
+# =============================
+**/logs/
+**/*.log
+**/tmp/
+**/temp/
+**/output/
+**/output_data/
+logs/
+notebooks/
+local/
+
+# =============================
+# Docker-Specific Files
+# =============================
+docker-compose.override.yml
+
+# =============================
+# Miscellaneous
+# =============================
+**/*.pdf
+**/*.zip
+**/*.csv
+**/*.tsv
+**/*.json
+**/*.xml
+**/*.md
+poetry.lock
+pyproject.toml

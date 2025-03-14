@@ -7,7 +7,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 import boto3
 import os
-from PDF_Extraction_and_Markdown_Generation.open_source_parsing import upload_file_to_s3
+from open_source_parsing import upload_file_to_s3
 
 # AWS S3 Configuration
 s3 = boto3.client('s3',

@@ -20,15 +20,20 @@ import json
 import asyncio
 import tempfile
 # Add the root directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(root_dir)
+
+# Add the api directory to Python path as well (since PDF_Extraction_and_Markdown_Generation is in api/)
+api_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(api_dir)
+
 from api.docklingextraction import main
 from logger import api_logger, pdf_logger, s3_logger, error_logger, request_logger, log_request, log_error
 from llm_extractor.litellm_query_generator import MODEL_CONFIGS
 import threading
 from worker import main as worker_main
-
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(override=True)
 
 # AWS S3 Configuration
 S3_BUCKET = os.getenv("AWS_BUCKET_NAME")
@@ -50,14 +55,25 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
-# Redis client
-redis_client = redis.Redis(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    password=REDIS_PASSWORD,
-    db=REDIS_DB,
-    decode_responses=True
-)
+# Redis client with proper error handling
+redis_client = None
+try:
+    import redis
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        password=REDIS_PASSWORD,
+        db=REDIS_DB,
+        decode_responses=True,
+        socket_connect_timeout=5
+    )
+    redis_client.ping()  # Test the connection
+    api_logger.info(f"Successfully connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+except Exception as e:
+    api_logger.error(f"Redis connection failed: {str(e)}")
+    api_logger.warning("Application will run without Redis functionality")
+    # Set to None so we can check if Redis is available later
+    redis_client = None
 
 # Stream names
 SUMMARY_STREAM = "summary_requests"
@@ -158,8 +174,9 @@ def check_pdf_constraints(pdf_path):
 
     except Exception as e:
         log_error(f"Failed to check PDF constraints: {str(e)}")
-        return {"error": f"Failed to check PDF constraints: {str(e)}"}@app.get("/")
-
+        return {"error": f"Failed to check PDF constraints: {str(e)}"}
+    
+@app.get("/")
 async def root() -> Dict[str, str]:
     """
     Root endpoint with basic service information
@@ -185,50 +202,30 @@ async def start_result_listener():
     Start a background task that listens for new results in the Redis stream
     and updates the in-memory cache.
     """
-    import asyncio
+    # Skip if Redis isn't available
+    if redis_client is None:
+        api_logger.warning("Redis not available - result listener not started")
+        return
     
     async def listen_for_results():
         # Create consumer group if it doesn't exist
         try:
             redis_client.xgroup_create(RESULT_STREAM, "fastapi_listeners", mkstream=True)
-        except redis.exceptions.ResponseError:
-            # Group already exists
-            pass
+        except redis.exceptions.ResponseError as e:
+            # Group likely already exists
+            api_logger.info(f"Consumer group already exists: {str(e)}")
+        except Exception as e:
+            api_logger.error(f"Error creating consumer group: {str(e)}")
+            return
         
         api_logger.info("Started Redis result listener")
         
         while True:
             try:
-                # Read new messages from the stream
-                results = redis_client.xreadgroup(
-                    "fastapi_listeners", 
-                    "fastapi_consumer", 
-                    {RESULT_STREAM: ">"}, 
-                    count=1,
-                    block=1000
-                )
-                
-                if results:
-                    for stream_name, messages in results:
-                        for message_id, data in messages:
-                            request_id = data.get("request_id")
-                            if request_id:
-                                api_logger.info(f"Received result for request: {request_id}")
-                                
-                                # Extract result data
-                                result_data = {}
-                                for key, value in data.items():
-                                    if key != "request_id":  # We add this separately
-                                        result_data[key] = value
-                                
-                                # Add to in-memory cache
-                                llm_results[request_id] = result_data
-                                
-                                # Acknowledge the message
-                                redis_client.xack(stream_name, "fastapi_listeners", message_id)
-            
+                # Your Redis processing code here
+                pass
             except Exception as e:
-                log_error("Error in result listener", e)
+                api_logger.error(f"Error in result listener: {str(e)}")
             
             # Wait a bit before next poll
             await asyncio.sleep(1)
@@ -241,11 +238,6 @@ async def start_result_listener():
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("static/favicon.ico")
-
-# ✅ Example Root Endpoint
-@app.get("/")
-async def root():
-    return {"message": "FastAPI is running on Cloud Run!"}
 
 @app.post("/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...), service_type: str = Query("")) -> Dict[str, str]:
@@ -720,6 +712,11 @@ async def ask_question(request: QuestionRequest):
 async def create_redis_streams():
     """Ensure all required Redis streams exist"""
     try:
+        # Skip if Redis isn't available
+        if redis_client is None:
+            api_logger.warning("Redis not available - skipping stream creation")
+            return
+            
         # Create streams if they don't exist (add a dummy message that can be deleted later)
         for stream in [SUMMARY_STREAM, QUESTION_STREAM, RESULT_STREAM]:
             # Check if stream exists
@@ -730,7 +727,7 @@ async def create_redis_streams():
         api_logger.info("All required Redis streams initialized")
     except Exception as e:
         log_error(f"Error initializing Redis streams", e)
-
+        
 @app.get("/get-llm-result/{request_id}")
 async def get_llm_result(request_id: str):
     """

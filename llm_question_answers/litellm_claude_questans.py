@@ -7,10 +7,10 @@ import litellm
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv('.env',override=True)
 
-# Configure LiteLLM with DeepSeek API key
-litellm.api_key = os.getenv("DEEPSEEK_API_KEY")
+# Configure LiteLLM with Claude API key
+litellm.api_key = os.getenv("ANTHROPIC_API_KEY")
 
 def encode_image_to_base64(image_path: str) -> str:
     """Convert an image file to base64 encoding."""
@@ -87,9 +87,9 @@ def process_markdown_with_images(markdown_path: str) -> Dict[str, Any]:
         "image_paths": image_paths
     }
 
-def create_deepseek_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
+def create_claude_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
     """
-    Generate a summary of markdown content using DeepSeek.
+    Generate a summary of markdown content using Claude.
     """
     try:
         if not os.path.exists(markdown_path):
@@ -97,46 +97,51 @@ def create_deepseek_summary_from_markdown(markdown_path: str, max_images: int = 
             
         content = process_markdown_with_images(markdown_path)
         
-        # DeepSeek specific prompt format
-        prompt_text = f"""Please create a comprehensive summary of the following document content.
-        Be objective and analytical in your summary.
+        # Prepare the prompt
+        prompt_text = f"""
+        Please create a comprehensive summary of the following document content.
         
-        Document Content:
+        The content is from a Markdown file that includes text and may reference images.
+        Please analyze all the provided information and create a well-structured summary that:
+        
+        1. Identifies the main topic and purpose of the document
+        2. Summarizes the key points and findings
+        3. Highlights important data from any tables
+        4. Describes what's shown in the images
+        5. Organizes the information in a logical flow
+        
+        Document content:
         {content["text_content"]}
-        
-        Structure your summary to:
-        1. State the main topic and purpose
-        2. List key findings and points
-        3. Describe any tables or data
-        4. Explain visual content
-        5. Present a logical flow of information
         """
         
-        # Prepare media content for DeepSeek
+        # Prepare media content for Claude
         media_content = []
         for img_path in content["image_paths"][:max_images]:
             try:
                 base64_image = encode_image_to_base64(img_path)
                 media_content.append({
                     "type": "image",
-                    "data": base64_image,
-                    "format": "base64"
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64_image
+                    }
                 })
             except Exception as e:
                 print(f"Error encoding image {img_path}: {e}")
         
-        # DeepSeek message format
         messages = [
             {
                 "role": "user",
-                "content": prompt_text,
-                "images": media_content if media_content else None
+                "content": [
+                    {"type": "text", "text": prompt_text},
+                    *media_content
+                ]
             }
         ]
         
-        # Call DeepSeek model using LiteLLM
         response = litellm.completion(
-            model="deepseek-vision/deepseek-vl-7b-chat",
+            model="claude-3-opus-20240229",  # Using Claude 3
             messages=messages,
             temperature=0.3,
             max_tokens=4000
@@ -145,7 +150,7 @@ def create_deepseek_summary_from_markdown(markdown_path: str, max_images: int = 
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from DeepSeek."
+            return "Error: No response generated from Claude."
     
     except Exception as e:
         return f"Error generating summary: {str(e)}"
@@ -171,44 +176,133 @@ def summarize_markdown(markdown_path: str, output_dir: Optional[str] = None) -> 
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate the summary
-    summary = create_deepseek_summary_from_markdown(markdown_path)
+    summary = create_claude_summary_from_markdown(markdown_path)
     
     # Get the original filename without extension
     markdown_filename = Path(markdown_path).stem
     
     # Save the summary to a file
-    summary_path = os.path.join(output_dir, f"{markdown_filename}_deepseek_summary.md")
+    summary_path = os.path.join(output_dir, f"{markdown_filename}_claude_summary.md")
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary)
     
     print(f"Summary saved to: {summary_path}")
     return summary
 
+def is_safe_prompt(prompt: str) -> bool:
+    """
+    Check if a prompt is safe to process.
+    Returns True if safe, False if potentially dangerous.
+    """
+    # Lowercase for consistent checking
+    prompt_lower = prompt.lower()
+    
+    # Dangerous patterns to check for
+    dangerous_patterns = [
+        # System/Security
+        r'system\(.*\)',
+        r'exec\(.*\)',
+        r'eval\(.*\)',
+        r'sudo',
+        r'rm -rf',
+        # Harmful Content
+        r'hack',
+        r'exploit',
+        r'vulnerability',
+        r'malware',
+        r'virus',
+        # Personal/Sensitive Data
+        r'password',
+        r'credit card',
+        r'ssn',
+        r'social security',
+        # Inappropriate Content
+        r'porn',
+        r'nsfw',
+        r'explicit',
+        # Harmful Behaviors
+        r'suicide',
+        r'self-harm',
+        r'kill',
+        r'weapon',
+        # Discrimination
+        r'racist',
+        r'nazi',
+        r'hate speech'
+    ]
+    
+    # Check for dangerous patterns
+    for pattern in dangerous_patterns:
+        if re.search(pattern, prompt_lower):
+            return False
+    
+    return True
+
+def validate_and_sanitize_prompt(prompt: str) -> tuple[bool, str]:
+    """
+    Validate and sanitize a user prompt.
+    Returns (is_safe, message) tuple.
+    """
+    # Check for empty or whitespace
+    if not prompt or prompt.isspace():
+        return False, "Prompt cannot be empty."
+    
+    # Check length limits
+    if len(prompt) > 1000:
+        return False, "Prompt is too long. Please limit to 1000 characters."
+    
+    # Check for safe content
+    if not is_safe_prompt(prompt):
+        return False, "I apologize, but I cannot process this prompt as it may contain inappropriate or dangerous content."
+    
+    # Sanitize the prompt
+    sanitized = re.sub(r'[<>]', '', prompt)  # Remove potential HTML/XML tags
+    sanitized = ' '.join(sanitized.split())   # Normalize whitespace
+    
+    return True, sanitized
+
 def answer_question_about_markdown(markdown_path: str, question: str, max_images: int = 5) -> str:
-    """Generate answer using DeepSeek."""
+    """
+    Generate an answer to a specific question about the markdown content using Claude.
+    """
+    # Validate the question first
+    is_safe, result = validate_and_sanitize_prompt(question)
+    if not is_safe:
+        return result
+        
+    question = result  # Use sanitized question
+    
     try:
         if not os.path.exists(markdown_path):
             return f"Error: Markdown file not found at {markdown_path}"
             
         content = process_markdown_with_images(markdown_path)
         
-        prompt_text = f"""Answer the following question based only on the provided document content:
+        prompt_text = f"""
+        Please answer the following question about the document content.
+        Use only the information provided in the document to answer.
+        If the answer cannot be found in the document, please say so.
+        Avoid generating any harmful, inappropriate, or dangerous content.
+        If the question asks for harmful content, decline to answer.
 
         Document content:
         {content["text_content"]}
 
         Question: {question}
-
-        If the answer cannot be found in the document, please state that clearly."""
+        """
         
+        # Prepare media content for Claude
         media_content = []
         for img_path in content["image_paths"][:max_images]:
             try:
                 base64_image = encode_image_to_base64(img_path)
                 media_content.append({
                     "type": "image",
-                    "data": base64_image,
-                    "format": "base64"
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64_image
+                    }
                 })
             except Exception as e:
                 print(f"Error encoding image {img_path}: {e}")
@@ -216,28 +310,30 @@ def answer_question_about_markdown(markdown_path: str, question: str, max_images
         messages = [
             {
                 "role": "user",
-                "content": prompt_text,
-                "images": media_content if media_content else None
+                "content": [
+                    {"type": "text", "text": prompt_text},
+                    *media_content
+                ]
             }
         ]
         
         response = litellm.completion(
-            model="deepseek/deepseek-reasoner",
+            model="claude-3-5-sonnet-20241022",
             messages=messages,
             temperature=0.3,
-            max_tokens=2000
+            max_tokens=4000
         )
         
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from DeepSeek."
+            return "Error: No response generated from Claude."
     
     except Exception as e:
         return f"Error generating answer: {str(e)}"
 
 if __name__ == "__main__":
-    markdown_file = "2408.09869v5-with-image-refs.md"
+    markdown_file = "Cloud_Run.md"
     
     if not os.path.exists(markdown_file):
         print(f"Markdown file not found: {markdown_file}")
@@ -245,11 +341,17 @@ if __name__ == "__main__":
 
     while True:
         print("\nEnter your question about the document (or 'quit' to exit):")
-        question = input("> ")
+        question = input("> ").strip()
         
         if question.lower() in ['quit', 'exit', 'q']:
             break
+        
+        # Validate the question
+        is_safe, result = validate_and_sanitize_prompt(question)
+        if not is_safe:
+            print("\nWarning:", result)
+            continue
             
-        answer = answer_question_about_markdown(markdown_file, question)
+        answer = answer_question_about_markdown(markdown_file, result)
         print("\nAnswer:")
         print(answer)
