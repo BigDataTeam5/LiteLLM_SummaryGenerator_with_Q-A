@@ -35,3 +35,8 @@ frontend/
 **/*.log
 **/tmp/
 **/temp/
+
+output/
+output_data/
+logs/
+notebooks/

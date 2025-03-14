@@ -32,6 +32,12 @@ python
 Thumbs.db
 *.pdf
 *.png
+!markdown_viewer.png
+!summary_generator.png
 *.jpg
 *.jpeg
 output/
+*.md
+!2408.09869v5-with-image-refs.md
+supervisord.pid
+*.rdb

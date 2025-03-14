@@ -1,3 +1,4 @@
 boto3
 pytest
 litellm
+redis>=4.3.0

@@ -3,16 +3,14 @@ FROM --platform=linux/amd64 python:3.9-slim
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy only the frontend (app.py and requirements.txt)
-COPY frontend/app.py /app/app.py
-COPY frontend/requirements.txt /app/requirements.txt
+COPY frontend/ /app/
 
 # Install required Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Expose Streamlit's default port
-EXPOSE 8080
+EXPOSE 8501
 
 # Run the Streamlit app
-CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
