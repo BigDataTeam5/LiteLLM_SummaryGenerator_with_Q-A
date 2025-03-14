@@ -3,7 +3,7 @@
 
 ## Assignment Overview
 
-![alt text](image-1.png)
+![alt text](image.png)
 
 
 1. **Develop a Streamlit web application** that:
