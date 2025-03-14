@@ -1,31 +1,33 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException,Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from typing import Dict,Any
+from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 import os
 import sys
 import boto3
 import fitz
 import requests
+import uuid
 from botocore.exceptions import NoCredentialsError
 from dotenv import load_dotenv
 from fastapi import Query
 MAX_FILE_SIZE_MB = 5  # Max allowed file size in MB
 MAX_PAGE_COUNT = 5  # Max allowed pages
 import time
-import uuid
 import redis
 import json
+import asyncio
+import tempfile
 # Add the root directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PDF_Extraction_and_Markdown_Generation.docklingextraction import main
-from api.logger import api_logger,pdf_logger,s3_logger,error_logger,request_logger,log_request,log_error
+from api.logger import api_logger, pdf_logger, s3_logger, error_logger, request_logger, log_request, log_error
+from llm_extractor.litellm_query_generator import MODEL_CONFIGS
+import threading
+from worker import main as worker_main
 
-#  Now import the parsing functions
-#  Call the Docling conversion function
 # Load environment variables from .env file
-import tempfile
 load_dotenv()
 
 # AWS S3 Configuration
@@ -76,12 +78,27 @@ class SummaryRequest(BaseModel):
     request_id: str
     content: str
     model: str
+    max_tokens: Optional[int] = 1000
+    temperature: Optional[float] = 0.7
 
 class QuestionRequest(BaseModel):
     request_id: str
     content: str
     question: str
     model: str
+    max_tokens: Optional[int] = 1000
+    temperature: Optional[float] = 0.7
+
+class LLMModelsResponse(BaseModel):
+    models: List[str]
+
+class SummarizeRequest(BaseModel):
+    request_id: str
+    content: str
+    model: str
+    max_tokens: Optional[int] = 1000
+    temperature: Optional[float] = 0.7
+    content_type: Optional[str] = "markdown"
 
 # In-memory results cache
 llm_results = {}
@@ -568,6 +585,15 @@ async def list_image_ref_markdowns():
     except Exception as e:
         log_error("Failed to fetch image-ref markdown files", e)
         raise HTTPException(status_code=500, detail=f"Failed to fetch image-ref markdown files: {str(e)}")
+# llm endpoints starts here
+def start_worker_process():
+    """
+    Start the LLM worker process using asyncio in a separate thread
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(worker_main())
+    loop.close()
 
 @app.post("/summarize", status_code=202)
 async def summarize_content(request: SummaryRequest):
@@ -582,6 +608,8 @@ async def summarize_content(request: SummaryRequest):
             "request_id": request.request_id,
             "content": request.content,
             "model": request.model,
+            "max_tokens": str(request.max_tokens),
+            "temperature": str(request.temperature),
             "timestamp": str(time.time())
         }
         
@@ -608,6 +636,8 @@ async def ask_question(request: QuestionRequest):
             "content": request.content,
             "question": request.question,
             "model": request.model,
+            "max_tokens": str(request.max_tokens),
+            "temperature": str(request.temperature),
             "timestamp": str(time.time())
         }
         
@@ -619,6 +649,22 @@ async def ask_question(request: QuestionRequest):
     except Exception as e:
         log_error(f"Failed to submit question request", e)
         raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
+
+
+@app.on_event("startup")
+async def create_redis_streams():
+    """Ensure all required Redis streams exist"""
+    try:
+        # Create streams if they don't exist (add a dummy message that can be deleted later)
+        for stream in [SUMMARY_STREAM, QUESTION_STREAM, RESULT_STREAM]:
+            # Check if stream exists
+            if not redis_client.exists(stream):
+                api_logger.info(f"Creating Redis stream: {stream}")
+                # Add a dummy message that will be processed and removed
+                redis_client.xadd(stream, {"init": "init"}, maxlen=10)
+        api_logger.info("All required Redis streams initialized")
+    except Exception as e:
+        log_error(f"Error initializing Redis streams", e)
 
 @app.get("/get-llm-result/{request_id}")
 async def get_llm_result(request_id: str):
@@ -656,14 +702,20 @@ async def get_llm_result(request_id: str):
                             "error": data["error"]
                         }
                     
+                    # Parse the data properly
+                    result_data = {}
+                    for key, value in data.items():
+                        if key != "request_id":  # We add this separately
+                            result_data[key] = value
+                    
                     # Cache the result
-                    llm_results[request_id] = data
+                    llm_results[request_id] = result_data
                     
                     # Return the result
                     return {
                         "request_id": request_id, 
                         "status": "completed",
-                        **data
+                        **result_data
                     }
         
         # No result found yet
@@ -675,6 +727,14 @@ async def get_llm_result(request_id: str):
             "status": "error",
             "error": str(e)
         }
+
+# Start the worker process on application startup
+@app.on_event("startup")
+async def startup_event():
+    # Start the worker process in the background
+    worker_thread = threading.Thread(target=start_worker_process, daemon=True)
+    worker_thread.start()
+    api_logger.info("LLM worker process started in background thread")
 
 # Background task to listen for LLM results from Redis and update the cache
 @app.on_event("startup")
@@ -706,16 +766,24 @@ async def start_result_listener():
                     block=1000
                 )
                 
-                for stream_name, messages in results:
-                    for message_id, data in messages:
-                        request_id = data.get("request_id")
-                        api_logger.info(f"Received result for request: {request_id}")
-                        
-                        # Add to in-memory cache
-                        llm_results[request_id] = data
-                        
-                        # Acknowledge the message
-                        redis_client.xack(stream_name, "fastapi_listeners", message_id)
+                if results:
+                    for stream_name, messages in results:
+                        for message_id, data in messages:
+                            request_id = data.get("request_id")
+                            if request_id:
+                                api_logger.info(f"Received result for request: {request_id}")
+                                
+                                # Extract result data
+                                result_data = {}
+                                for key, value in data.items():
+                                    if key != "request_id":  # We add this separately
+                                        result_data[key] = value
+                                
+                                # Add to in-memory cache
+                                llm_results[request_id] = result_data
+                                
+                                # Acknowledge the message
+                                redis_client.xack(stream_name, "fastapi_listeners", message_id)
             
             except Exception as e:
                 log_error("Error in result listener", e)
@@ -726,3 +794,46 @@ async def start_result_listener():
     # Start the listener task
     asyncio.create_task(listen_for_results())
 
+
+@app.get("/llm/models", response_model=LLMModelsResponse)
+async def list_available_models():
+    """
+    Returns a list of available LLM models that can be used for summarization and Q&A
+    """
+    try:
+        models = list(MODEL_CONFIGS.keys())
+        api_logger.info(f"Retrieved {len(models)} available LLM models")
+        return {"models": models}
+    except Exception as e:
+        log_error("Failed to retrieve available models", e)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve available models: {str(e)}")
+
+@app.get("/llm/health")
+async def check_llm_health():
+    """
+    Check if the LLM worker process is running and Redis streams are operational
+    """
+    try:
+        # Check Redis connection
+        redis_ping = redis_client.ping()
+        
+        # Check if worker streams exist
+        summary_exists = redis_client.exists(SUMMARY_STREAM)
+        question_exists = redis_client.exists(QUESTION_STREAM)
+        result_exists = redis_client.exists(RESULT_STREAM)
+        
+        return {
+            "redis_connected": bool(redis_ping),
+            "streams": {
+                "summary_stream": bool(summary_exists),
+                "question_stream": bool(question_exists),
+                "result_stream": bool(result_exists)
+            },
+            "status": "healthy" if redis_ping else "unhealthy"
+        }
+    except Exception as e:
+        log_error("LLM health check failed", e)
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }

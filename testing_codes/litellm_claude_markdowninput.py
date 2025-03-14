@@ -9,8 +9,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Configure LiteLLM with your Gemini API key
-litellm.api_key = os.getenv("gemini_api_key")
+# Configure LiteLLM with your Anthropic API key
+# Use the provider-specific key for Anthropic
+litellm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+print(f"Anthropic API key set: {'✓' if litellm.anthropic_api_key else '✗'}")
 
 def encode_image_to_base64(image_path: str) -> str:
     """Convert an image file to base64 encoding."""
@@ -40,8 +42,7 @@ def extract_image_paths_from_markdown(markdown_content: str, base_dir: str) -> L
     # Match markdown image syntax: ![alt text](image_path)
     image_matches = re.findall(r'!\[.*?\]\((.*?)\)', markdown_content)
     
-    # Match HTML img tags: <img src="image_path" />
-    html_matches = re.findall(r'<img[^>]*src=["\'](.*?)["\'][^>]*>', markdown_content)
+    # Match HTML img tags: <img[^>]*src=["\'](.*?)["\'][^>]*>', markdown_content)
     
     # Combine all matches
     all_matches = image_matches + html_matches
@@ -87,13 +88,13 @@ def process_markdown_with_images(markdown_path: str) -> Dict[str, Any]:
         "image_paths": image_paths
     }
 
-def create_gemini_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
+def create_claude_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
     """
-    Generate a summary of markdown content using Gemini.
+    Generate a summary of markdown content using Claude.
     
     Args:
         markdown_path: Path to the markdown file
-        max_images: Maximum number of images to include (Gemini has input limits)
+        max_images: Maximum number of images to include (Claude has input limits)
         
     Returns:
         A string containing the summary
@@ -157,10 +158,9 @@ def create_gemini_summary_from_markdown(markdown_path: str, max_images: int = 5)
                     }
                 ]
         
-        # Call Gemini model using LiteLLM - use the newer 1.5 models
-        # Use gemini-1.5-flash for both text and image inputs
+        # Call Claude model using LiteLLM
         response = litellm.completion(
-            model="gemini/gemini-1.5-flash",  # Using the newer model
+            model="anthropic/claude-3-opus-20240229",  # Updated to correct model name with version
             messages=messages,
             temperature=0.3,
             max_tokens=4000
@@ -170,7 +170,7 @@ def create_gemini_summary_from_markdown(markdown_path: str, max_images: int = 5)
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from Gemini."
+            return "Error: No response generated from Claude."
     
     except Exception as e:
         return f"Error generating summary: {str(e)}"
@@ -196,13 +196,13 @@ def summarize_markdown(markdown_path: str, output_dir: Optional[str] = None) -> 
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate the summary
-    summary = create_gemini_summary_from_markdown(markdown_path)
+    summary = create_claude_summary_from_markdown(markdown_path)
     
     # Get the original filename without extension
     markdown_filename = Path(markdown_path).stem
     
     # Save the summary to a file
-    summary_path = os.path.join(output_dir, f"{markdown_filename}_gemini_summary.md")
+    summary_path = os.path.join(output_dir, f"{markdown_filename}_claude_summary.md")
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary)
     
@@ -212,7 +212,7 @@ def summarize_markdown(markdown_path: str, output_dir: Optional[str] = None) -> 
 if __name__ == "__main__":
     # Example usage:
     # Replace with the path to your markdown file
-    markdown_file = "../2408.09869v5-with-image-refs.md"
+    markdown_file = "2408.09869v5-with-image-refs.md"
     
     if os.path.exists(markdown_file):
         summary = summarize_markdown(markdown_file)

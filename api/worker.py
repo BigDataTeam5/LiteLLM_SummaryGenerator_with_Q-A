@@ -1,229 +1,284 @@
+#!/usr/bin/env python3
 import os
 import sys
-import time
 import json
-import redis
+import uuid
 import asyncio
-import litellm
+import time
+import logging
+from typing import Dict, Any, List, Optional
+import redis.asyncio as redis_async
 from dotenv import load_dotenv
+import traceback
 
-# Rest of your file remains the same...
+# Fix the Python path to correctly find modules
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
 
-# Add the root directory to the Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from api.logger import api_logger, log_error
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger("llm_worker")
 
 # Load environment variables
 load_dotenv()
 
-# Redis Configuration
+# Import LLM extraction modules
+from llm_extractor.litellm_query_generator import (
+    summarize_markdown as litellm_summarize_markdown,
+    qa_markdown as litellm_qa_markdown,
+    MODEL_CONFIGS,
+    generate_llm_response
+)
+
+# Stream names - ensuring they match with main.py
+SUMMARY_STREAM = "summary_requests"
+QUESTION_STREAM = "question_requests"
+RESULT_STREAM = "llm_results"
+
+# Redis configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
-# Redis client
-redis_client = redis.Redis(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    password=REDIS_PASSWORD,
-    db=REDIS_DB,
-    decode_responses=True
-)
-
-# Stream names
-SUMMARY_STREAM = "summary_requests"
-QUESTION_STREAM = "question_requests"
-RESULT_STREAM = "llm_results"
-
-# Model mapping for LiteLLM
-model_mapping = {
-    "chatgpt": "gpt-4o", 
-    "claude": "anthropic.claude-3-opus-20240229",
-    "grok": "xai.grok-1",
-    "gemini": "gemini/gemini-1.5-flash",
-    "deepseek": "deepseek-ai/deepseek-chat"
-}
-
-# API key mapping - load these from environment variables
-api_keys = {
-    "gpt-4o": os.getenv("OPENAI_API_KEY"),
-    "anthropic.claude-3-opus-20240229": os.getenv("ANTHROPIC_API_KEY"),
-    "xai.grok-1": os.getenv("GROK_API_KEY"),
-    "gemini/gemini-1.5-flash": os.getenv("GEMINI_API_KEY"),
-    "deepseek-ai/deepseek-chat": os.getenv("DEEPSEEK_API_KEY")
-}
-
-def get_api_key_for_model(model):
-    """Get the appropriate API key for the model"""
-    actual_model = model_mapping.get(model, model)
-    return api_keys.get(actual_model)
-
-async def process_summary_request(data):
-    """Process a summary request from the Redis stream"""
-    request_id = data.get("request_id")
-    content = data.get("content")
-    model_name = data.get("model")
+class LLMWorker:
+    """Worker class for processing LLM requests from Redis streams."""
     
-    api_logger.info(f"Processing summary request {request_id} with model {model_name}")
+    def __init__(self):
+        """Initialize the worker with Redis connection."""
+        self.redis = None
     
-    try:
-        # Map the friendly model name to the actual model identifier
-        model = model_mapping.get(model_name, model_name)
-        
-        # Set the API key for the model
-        litellm.api_key = get_api_key_for_model(model_name)
-        
-        # Prepare messages for LiteLLM
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant that creates concise, informative summaries."},
-            {"role": "user", "content": f"Please summarize the following content:\n\n{content}"}
-        ]
-        
-        # Call the LLM through LiteLLM
-        response = litellm.completion(
-            model=model,
-            messages=messages,
-            temperature=0.3,
-            max_tokens=1000
-        )
-        
-        # Extract the result
-        summary = response.choices[0].message.content
-        usage = response.usage
-        
-        # Format the result for Redis
-        result = {
-            "request_id": request_id,
-            "content": summary,
-            "usage": json.dumps(usage),
-            "model": model,
-            "timestamp": str(time.time())
-        }
-        
-        # Publish to result stream
-        redis_client.xadd(RESULT_STREAM, result)
-        api_logger.info(f"Published summary result for request {request_id}")
-        
-        return True
-    
-    except Exception as e:
-        log_error(f"Error processing summary request {request_id}", e)
-        
-        # Publish error result
-        error_result = {
-            "request_id": request_id,
-            "error": str(e),
-            "timestamp": str(time.time())
-        }
-        redis_client.xadd(RESULT_STREAM, error_result)
-        return False
-
-async def process_question_request(data):
-    """Process a question request from the Redis stream"""
-    request_id = data.get("request_id")
-    content = data.get("content")
-    question = data.get("question")
-    model_name = data.get("model")
-    
-    api_logger.info(f"Processing question request {request_id} with model {model_name}")
-    
-    try:
-        # Map the friendly model name to the actual model identifier
-        model = model_mapping.get(model_name, model_name)
-        
-        # Set the API key for the model
-        litellm.api_key = get_api_key_for_model(model_name)
-        
-        # Prepare messages for LiteLLM
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant that accurately answers questions based on the provided content."},
-            {"role": "user", "content": f"Based on the following content:\n\n{content}\n\nPlease answer this question: {question}"}
-        ]
-        
-        # Call the LLM through LiteLLM
-        response = litellm.completion(
-            model=model,
-            messages=messages,
-            temperature=0.3,
-            max_tokens=1000
-        )
-        
-        # Extract the result
-        answer = response.choices[0].message.content
-        usage = response.usage
-        
-        # Format the result for Redis
-        result = {
-            "request_id": request_id,
-            "content": answer,
-            "usage": json.dumps(usage),
-            "model": model,
-            "question": question,
-            "timestamp": str(time.time())
-        }
-        
-        # Publish to result stream
-        redis_client.xadd(RESULT_STREAM, result)
-        api_logger.info(f"Published question result for request {request_id}")
-        
-        return True
-    
-    except Exception as e:
-        log_error(f"Error processing question request {request_id}", e)
-        
-        # Publish error result
-        error_result = {
-            "request_id": request_id,
-            "error": str(e),
-            "timestamp": str(time.time())
-        }
-        redis_client.xadd(RESULT_STREAM, error_result)
-        return False
-
-# Fix the incomplete while loop in your worker function
-async def worker():
-    """Main worker function to process messages from Redis streams"""
-    # Create consumer groups if they don't exist
-    try:
-        redis_client.xgroup_create(SUMMARY_STREAM, "llm_workers", mkstream=True)
-    except redis.exceptions.ResponseError:
-        # Group already exists
-        pass
-        
-    try:
-        redis_client.xgroup_create(QUESTION_STREAM, "llm_workers", mkstream=True)
-    except redis.exceptions.ResponseError:
-        # Group already exists
-        pass
-    
-    consumer_name = f"worker-{os.getpid()}"
-    api_logger.info(f"Starting LLM worker {consumer_name}")
-    
-    while True:
+    async def connect_redis(self):
+        """Connect to Redis server."""
         try:
-            # Process pending messages first
-            pending_summary = redis_client.xpending(SUMMARY_STREAM, "llm_workers")
-            pending_question = redis_client.xpending(QUESTION_STREAM, "llm_workers")
+            self.redis = redis_async.Redis(
+                host=REDIS_HOST,
+                port=REDIS_PORT,
+                password=REDIS_PASSWORD,
+                db=REDIS_DB,
+                decode_responses=True
+            )
+            ping = await self.redis.ping()
+            if ping:
+                logger.info(f"Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
+            else:
+                logger.error(f"Failed to ping Redis at {REDIS_HOST}:{REDIS_PORT}")
+            return ping
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            return False
+    
+    async def initialize_streams(self):
+        """Ensure all required Redis streams and consumer groups exist."""
+        try:
+            # Create consumer groups for each stream
+            streams = [SUMMARY_STREAM, QUESTION_STREAM, RESULT_STREAM]
             
-            # Read new messages from the streams
-            streams = {SUMMARY_STREAM: '>', QUESTION_STREAM: '>'}
-            results = redis_client.xreadgroup("llm_workers", consumer_name, streams, count=1, block=1000)
-            
-            for stream_name, messages in results:
-                for message_id, data in messages:
-                    if stream_name == SUMMARY_STREAM:
-                        await process_summary_request(data)
-                    elif stream_name == QUESTION_STREAM:
-                        await process_question_request(data)
+            for stream in streams:
+                try:
+                    # Create the stream if it doesn't exist
+                    await self.redis.xadd(stream, {"init": "stream-creation"}, maxlen=10)
+                    logger.info(f"Initialized Redis stream: {stream}")
                     
-                    # Acknowledge that we processed the message
-                    redis_client.xack(stream_name, "llm_workers", message_id)
+                    # Create consumer group
+                    await self.redis.xgroup_create(stream, "llm_workers", mkstream=True, id="0")
+                    logger.info(f"Created consumer group for stream: {stream}")
+                except redis_async.ResponseError as e:
+                    if "BUSYGROUP" in str(e):
+                        logger.info(f"Consumer group already exists for stream: {stream}")
+                    else:
+                        logger.error(f"Error creating consumer group for {stream}: {e}")
+        except Exception as e:
+            logger.error(f"Error initializing streams: {e}")
+    
+    async def process_request(self, request_data: Dict[str, Any], stream_name: str):
+        """Process a single LLM request."""
+        request_id = request_data.get("request_id", str(uuid.uuid4()))
+        logger.info(f"Processing request {request_id} from stream {stream_name}")
+        
+        # Get task type based on stream name
+        task_type = "summary" if stream_name == SUMMARY_STREAM else "qa"
+        
+        logger.info(f"Task type: {task_type}")
+        model_id = request_data.get("model", request_data.get("model_id", "gemini"))
+        content_type = request_data.get("content_type", "markdown")
+        logger.info(f"Using model: {model_id}, Content type: {content_type}")
+        
+        try:
+            start_time = asyncio.get_event_loop().time()
+            
+            if task_type == "summary":
+                # Process markdown summary request
+                content = request_data.get("content")
+                if not content:
+                    return {
+                        "request_id": request_id,
+                        "status": "error",
+                        "error": "Content is required for summarization"
+                    }
+                
+                logger.info(f"Summarizing markdown content with {model_id}")
+                result = await asyncio.to_thread(
+                    litellm_summarize_markdown,
+                    content,
+                    model_id
+                )
+                
+            elif task_type == "qa":
+                # Process Q&A request
+                content = request_data.get("content")
+                if not content:
+                    return {
+                        "request_id": request_id,
+                        "status": "error",
+                        "error": "Content is required for Q&A"
+                    }
+                
+                question = request_data.get("question")
+                if not question:
+                    return {
+                        "request_id": request_id,
+                        "status": "error",
+                        "error": "Question is required for Q&A tasks"
+                    }
+                
+                logger.info(f"Answering question with {model_id}")
+                result = await asyncio.to_thread(
+                    litellm_qa_markdown,
+                    content,
+                    question,
+                    model_id
+                )
+                
+            else:
+                return {
+                    "request_id": request_id,
+                    "status": "error",
+                    "error": f"Invalid task type: {task_type}"
+                }
+            
+            processing_time = asyncio.get_event_loop().time() - start_time
+            logger.info(f"Processed {task_type} request {request_id} in {processing_time:.2f}s")
+            
+            # Prepare response based on task type
+            response = {
+                "request_id": request_id,
+                "status": "completed",
+                "model_id": model_id,
+                "model_name": MODEL_CONFIGS.get(model_id, {"name": model_id})["name"],
+                "content_type": content_type,
+                "task_type": task_type,
+                "processing_time_seconds": processing_time
+            }
+            
+            # Add task-specific fields
+            if task_type == "summary":
+                response["summary"] = result
+            elif task_type == "qa":
+                response["question"] = request_data.get("question")
+                response["answer"] = result
+            
+            return response
         
         except Exception as e:
-            log_error("Error in LLM worker", e)
-            await asyncio.sleep(5)  # Wait before retrying
+            logger.error(f"Error processing {task_type} request: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                "request_id": request_id,
+                "status": "error",
+                "error": str(e)
+            }
+    
+    async def add_response_to_stream(self, response_data: Dict[str, Any]):
+        """Add processing result to the response stream."""
+        try:
+            # Convert any non-string values to strings for Redis
+            redis_data = {}
+            for k, v in response_data.items():
+                if v is not None:
+                    redis_data[k] = str(v) if not isinstance(v, str) else v
+            
+            # Add to result stream
+            await self.redis.xadd(RESULT_STREAM, redis_data, maxlen=1000)
+            logger.info(f"Added result for request {response_data.get('request_id')} to {RESULT_STREAM}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add response to stream: {e}")
+            return False
+    
+    async def process_stream(self):
+        """Process requests from all Redis streams."""
+        await self.initialize_streams()
+        
+        logger.info(f"Starting to process requests from streams: {SUMMARY_STREAM}, {QUESTION_STREAM}")
+        consumer_name = f"worker-{uuid.uuid4()}"
+        logger.info(f"Consumer name: {consumer_name}")
+        
+        while True:
+            try:
+                # Read new messages from both streams
+                streams = await self.redis.xreadgroup(
+                    "llm_workers", 
+                    consumer_name,
+                    {
+                        SUMMARY_STREAM: ">", 
+                        QUESTION_STREAM: ">"
+                    }, 
+                    count=1,
+                    block=5000
+                )
+                
+                if not streams:
+                    # No new messages, continue waiting
+                    await asyncio.sleep(0.1)
+                    continue
+                
+                # Process each received stream and message
+                for stream_data in streams:
+                    stream_name = stream_data[0]
+                    messages = stream_data[1]
+                    
+                    for message_id, fields in messages:
+                        # Process message
+                        request_data = {k: v for k, v in fields.items()}
+                        
+                        logger.info(f"Received request {request_data.get('request_id', 'unknown')} from {stream_name}")
+                        
+                        # Process the request
+                        response_data = await self.process_request(request_data, stream_name)
+                        
+                        # Add the result to the response stream
+                        await self.add_response_to_stream(response_data)
+                        
+                        # Acknowledge the message
+                        await self.redis.xack(stream_name, "llm_workers", message_id)
+                        
+                        logger.info(f"Completed request {request_data.get('request_id', 'unknown')} from {stream_name}")
+            
+            except Exception as e:
+                logger.error(f"Error processing stream: {e}")
+                logger.error(traceback.format_exc())
+                await asyncio.sleep(5)
+                
+    async def run(self):
+        """Run the worker."""
+        connected = await self.connect_redis()
+        if not connected:
+            logger.error("Failed to connect to Redis. Exiting.")
+            return False
+        
+        await self.process_stream()
+        return True
+
+async def main():
+    """Main entry point."""
+    logger.info("Starting LLM Worker")
+    worker = LLMWorker()
+    await worker.run()
 
 if __name__ == "__main__":
-    # Run the worker
-    asyncio.run(worker())
+    asyncio.run(main())

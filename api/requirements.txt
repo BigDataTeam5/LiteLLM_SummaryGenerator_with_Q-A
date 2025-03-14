@@ -15,3 +15,7 @@ docling
 redis>=4.5.0
 litellm>=1.0.0
 async-timeout>=4.0.0
+openai
+python-dotenv
+requests
+
