@@ -47,7 +47,11 @@ if "fastapi_url" not in st.session_state:
     default_url = os.environ.get("FASTAPI_URL", "http://localhost:8080")
     st.session_state.fastapi_url = default_url
 if "api_connected" not in st.session_state:
-    st.session_state.api_connected = False
+    st.session_state.api_connected = True
+if "markdown_summaries" not in st.session_state:
+    st.session_state.markdown_summaries = {}  # Key: markdown_name, Value: summary_result
+if "markdown_qa" not in st.session_state:
+    st.session_state.markdown_qa = {}  # Key: markdown_name, Value: {question: answer}
 
 # Define function to update API endpoints based on the configured URL
 def update_api_endpoints():
@@ -74,7 +78,7 @@ update_api_endpoints()
 # Function to test API connection - Add support for potential backend health endpoints
 def test_api_connection():
     try:
-        # Try to connect to the root endpoint first
+        
         response = requests.get(f"{st.session_state.fastapi_url}/", timeout=5)
         if response.status_code == 200:
             st.session_state.api_connected = True
@@ -97,6 +101,55 @@ def test_api_connection():
     except Exception as e:
         st.session_state.api_connected = False
         return False, f"Unexpected error: {str(e)}"
+# Function to calculate token costs with better error handling
+def calculate_token_cost(model_id, usage_data):
+    """Calculate the cost of token usage based on model rates"""
+    # Define pricing per 1000 tokens for different models (approximate as of 2025)
+    model_rates = {
+        # Format: model_id: [input_price_per_1k, output_price_per_1k]
+        "gpt4o": [0.01, 0.03],
+        "gemini": [0.000375, 0.001125],
+        "deepseek": [0.0008, 0.0024],
+        "claude": [0.008, 0.024],
+        "grok": [0.0005, 0.0015]
+    }
+    
+    # Enhanced error handling for usage_data
+    if not usage_data:
+        return {
+            "prompt_cost": 0,
+            "completion_cost": 0, 
+            "total_cost": 0,
+            "currency": "USD"
+        }
+        
+    # Convert usage_data from string to dictionary if needed
+    if isinstance(usage_data, str):
+        try:
+            import json
+            usage_data = json.loads(usage_data)
+        except:
+            print(f"Failed to parse usage data: {usage_data}")
+            usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            
+    # Default to GPT-4 rates if model not found
+    rates = model_rates.get(model_id, [0.01, 0.03])
+    
+    # Get token counts with safer conversion
+    prompt_tokens = int(usage_data.get("prompt_tokens", 0) or 0)
+    completion_tokens = int(usage_data.get("completion_tokens", 0) or 0)
+    
+    # Calculate costs
+    prompt_cost = (prompt_tokens / 1000) * rates[0]
+    completion_cost = (completion_tokens / 1000) * rates[1]
+    total_cost = prompt_cost + completion_cost
+    
+    return {
+        "prompt_cost": prompt_cost,
+        "completion_cost": completion_cost,
+        "total_cost": total_cost,
+        "currency": "USD"
+    }
 
 # Function to Upload File to S3 - With improved error handling
 def upload_pdf(file):
@@ -219,7 +272,7 @@ def fetch_markdown_history():
             
             for item in markdown_data.get("image_ref_markdowns", []):
                 try:
-                    display_name = item["file_name"].replace("-with-image-refs", "").replace(".md", "")
+                    display_name = item["file_name"].replace("-with-image-", "").replace(".md", "")
                     history_items.append({
                         "label": display_name,
                         "url": item["download_url"],
@@ -279,46 +332,53 @@ def check_llm_health():
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
 
-# Enhanced function to submit summarization request - Streamlined for markdown content
 def submit_summarization(content, model):
-    """Submit markdown content to be summarized by the selected LLM model"""
+    """Submit content for summarization"""
     try:
         with st.spinner("⏳ Generating summary with LLM... This may take a moment."):
-            # Generate a unique request ID
-            request_id = f"summary_{uuid.uuid4()}"
-
-            # Submit the summarization request with markdown content
+            # Set processing state
+            st.session_state.processing_summary = True
+            
+            # Prepare the request payload
+            payload = {
+                "content": content,
+                "model": model,
+                "content_type": "markdown"
+            }
+            
+            # Submit to API
             response = requests.post(
-                st.session_state.SUMMARIZE_API,
-                json={
-                    "request_id": request_id,
-                    "content": content,
-                    "model": model,
-                    "max_tokens": 1500,
-                    "temperature": 0.5,
-                    "content_type": "markdown"  # Explicitly mark as markdown content
-                },
-                timeout=30
+                st.session_state.SUMMARIZE_API,  # Fixed: Use the correct API endpoint
+                json=payload
             )
-
+            
             if response.status_code == 202:
-                st.session_state.processing_summary = True
-                st.info("Processing markdown content...")
+                # Got a job ID, need to poll for result
+                job_id = response.json().get("request_id")
+                result = poll_for_llm_result(job_id)
                 
-                # Start polling for results
-                result = poll_for_llm_result(request_id)
+                # Debug token usage data
+                st.write(f"DEBUG: Raw result from API: {result}")
+                if result and "usage" in result:
+                    st.write(f"DEBUG: Token usage from API: {result['usage']}")
+                
                 if result and "error" not in result:
+                    # Store the summary in session state
                     st.session_state.summary_result = result
+                    # Add timestamp to the result
+                    result["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
                     return result
                 else:
                     st.error(f"Error getting summary: {result.get('error', 'Unknown error')}")
                     return None
             else:
-                st.error(f"Failed to submit summary request: {response.text}")
+                st.error(f"Failed to submit for summarization: {response.text}")
                 return None
     except Exception as e:
         st.error(f"Error in summarization: {str(e)}")
         return None
+    finally:
+        st.session_state.processing_summary = False
 
 # Enhanced function to submit question to LLM - Updated to handle markdown content
 def submit_question(content, question, model):
@@ -398,8 +458,6 @@ def poll_for_llm_result(job_id, max_retries=15, interval=2):
                     st.error(f"LLM processing failed: {result_data.get('error', 'Unknown error')}")
                     return None
                     
-                # Still processing
-                st.info(f"Processing... {int(progress*100)}% (Attempt {retries+1}/{max_retries})")
             
             elif response.status_code == 404:
                 # Job not found
@@ -542,6 +600,15 @@ with st.sidebar:
                         st.session_state.selected_markdown_name = markdown["label"]
                         st.session_state.markdown_ready = True
                         st.session_state.next_clicked = False
+                        if markdown["label"] in st.session_state.markdown_summaries:
+                            st.session_state.summary_result = st.session_state.markdown_summaries[markdown["label"]]
+                        else:
+                            st.session_state.summary_result = None
+                        if markdown["label"] in st.session_state.markdown_qa:
+                            st.session_state.question_result = st.session_state.markdown_qa[markdown["label"]]
+                        else:
+                            st.session_state.question_result = None  # Fixed: Set to None instead of accessing non-existent attribute
+
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error loading markdown: {str(e)}")
@@ -569,7 +636,7 @@ if not st.session_state.api_connected:
 else:
     # Only continue with the rest of the app if connected
     if st.session_state.get("selected_markdown_content", None):
-        st.image("images/summary_generator.png", use_container_width=True)
+        # st.image("/images/summary_generator.png", use_container_width=True)
         col1, col2 =  st.columns([1, 0.3])
         with col1:
             if st.button("Back to Main Menu"):
@@ -606,8 +673,8 @@ else:
             st.warning("⚠️ Please select an LLM model from the sidebar to enable summarization and Q&A.")
         else:
             # Create tabs for different LLM functions
-            llm_tab1, llm_tab2 = st.tabs(["📝 Document Summarization", "❓ Question & Answer"])
-            
+            # Create tabs for different LLM functions
+            llm_tab1, llm_tab2, llm_tab3 = st.tabs(["📝 Document Summarization", "❓ Question & Answer", "📊 Token Usage History"])            
             with llm_tab1:
                 st.markdown("### 📝 Get an AI Summary of this Document")
                 
@@ -626,23 +693,9 @@ else:
                                     st.session_state.summary_result.get("content", "No summary available"))
                         st.markdown(summary_text)
                         
-                        # Display token usage if available
-                        usage = st.session_state.summary_result.get("usage")
-                        if usage:
-                            try:
-                                # Handle usage data which might be a string or dict
-                                if isinstance(usage, str):
-                                    usage_data = json.loads(usage) if usage.startswith("{") else {"total_tokens": "N/A"}
-                                else:
-                                    usage_data = usage
-                                    
-                                st.markdown("**Token Usage:**")
-                                cols = st.columns(3)
-                                cols[0].metric("Prompt Tokens", usage_data.get("prompt_tokens", "N/A"))
-                                cols[1].metric("Completion Tokens", usage_data.get("completion_tokens", "N/A"))
-                                cols[2].metric("Total Tokens", usage_data.get("total_tokens", "N/A"))
-                            except Exception as e:
-                                st.info(f"Token usage data format: {str(e)}")
+                        # Store this summary in our markdown-specific dictionary for history tracking
+                        if st.session_state.selected_markdown_name:
+                            st.session_state.markdown_summaries[st.session_state.selected_markdown_name] = st.session_state.summary_result
             
             with llm_tab2:
                 st.markdown("### ❓ Ask Questions About the Document")
@@ -662,6 +715,14 @@ else:
                             user_question,
                             st.session_state.llm_model
                         )
+                         # Store the Q&A result in the markdown-specific dictionary
+                        if question_result and st.session_state.selected_markdown_name:
+                            # Initialize the Q&A dictionary for this markdown if it doesn't exist
+                            if st.session_state.selected_markdown_name not in st.session_state.markdown_qa:
+                                st.session_state.markdown_qa[st.session_state.selected_markdown_name] = {}
+                                
+                            # Store the latest question and answer
+                            st.session_state.markdown_qa[st.session_state.selected_markdown_name] = question_result
                 
                 # Display question result if available
                 if st.session_state.get("question_result"):
@@ -674,27 +735,143 @@ else:
                         answer_text = st.session_state.question_result.get("answer", 
                                     st.session_state.question_result.get("content", "No answer available"))
                         st.markdown(answer_text)
-                        
-                        # Display token usage if available
-                        usage = st.session_state.question_result.get("usage")
-                        if usage:
+            with llm_tab3:
+                st.markdown("### 📊 Token Usage History")
+                
+                # Collect usage data from both summary and Q&A results
+                usage_records = []
+                
+                # Look through markdown summaries
+                for markdown_name, result in st.session_state.markdown_summaries.items():
+                    if result and "usage" in result:
+                        usage_data = result["usage"]
+                        if isinstance(usage_data, str):
                             try:
-                                # Handle usage data which might be a string or dict
-                                if isinstance(usage, str):
-                                    usage_data = json.loads(usage) if usage.startswith("{") else {"total_tokens": "N/A"}
-                                else:
-                                    usage_data = usage
-                                    
-                                st.markdown("**Token Usage:**")
-                                cols = st.columns(3)
-                                cols[0].metric("Prompt Tokens", usage_data.get("prompt_tokens", "N/A"))
-                                cols[1].metric("Completion Tokens", usage_data.get("completion_tokens", "N/A"))
-                                cols[2].metric("Total Tokens", usage_data.get("total_tokens", "N/A"))
-                            except Exception as e:
-                                st.info(f"Token usage data format: {str(e)}")
-
+                                usage_data = json.loads(usage_data)
+                            except:
+                                usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                        
+                        # Calculate costs based on the model
+                        model_id = result.get("model_id", "gemini")
+                        cost_data = calculate_token_cost(model_id, usage_data)
+                        
+                        usage_records.append({
+                            "markdown": markdown_name,
+                            "task_type": "Summary",
+                            "model": result.get("model_name", model_id),
+                            "prompt_tokens": usage_data.get("prompt_tokens", 0),
+                            "completion_tokens": usage_data.get("completion_tokens", 0),
+                            "total_tokens": usage_data.get("total_tokens", 0),
+                            "cost": cost_data["total_cost"],
+                            "timestamp": result.get("timestamp", "N/A")
+                        })
+                
+                # Look through Q&A results
+                for markdown_name, result in st.session_state.markdown_qa.items():
+                    if result and "usage" in result:
+                        usage_data = result["usage"]
+                        if isinstance(usage_data, str):
+                            try:
+                                usage_data = json.loads(usage_data)
+                            except:
+                                usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                        
+                        # Calculate costs based on the model
+                        model_id = result.get("model_id", "gemini")
+                        cost_data = calculate_token_cost(model_id, usage_data)
+                        
+                        usage_records.append({
+                            "markdown": markdown_name,
+                            "task_type": "Q&A",
+                            "question": result.get("question", "N/A")[:30] + "...",
+                            "model": result.get("model_name", model_id),
+                            "prompt_tokens": usage_data.get("prompt_tokens", 0),
+                            "completion_tokens": usage_data.get("completion_tokens", 0),
+                            "total_tokens": usage_data.get("total_tokens", 0),
+                            "cost": cost_data["total_cost"],
+                            "timestamp": result.get("timestamp", "N/A")
+                        })
+                
+                if not usage_records:
+                    st.info("No token usage data available yet. Generate summaries or ask questions to see usage statistics.")
+                else:
+                    # Calculate total tokens and cost
+                    total_tokens = sum(record["total_tokens"] for record in usage_records)
+                    total_cost = sum(record["cost"] for record in usage_records)
+                    prompt_tokens = sum(record["prompt_tokens"] for record in usage_records)
+                    completion_tokens = sum(record["completion_tokens"] for record in usage_records)
+                    
+                    # Display overall metrics
+                    st.subheader("Overall Usage")
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("Total Tokens", f"{total_tokens:,}")
+                    col2.metric("Input Tokens", f"{prompt_tokens:,}")
+                    col3.metric("Output Tokens", f"{completion_tokens:,}")
+                    col4.metric("Total Cost", f"${total_cost:.5f}")
+                    
+                    # Display detailed usage table
+                    st.subheader("Detailed Usage by Document")
+                    
+                    # Convert to DataFrame for display
+                    import pandas as pd
+                    df = pd.DataFrame(usage_records)
+                    
+                    # Reorder columns for better display
+                    column_order = ["markdown", "task_type", "model", "prompt_tokens", 
+                                    "completion_tokens", "total_tokens", "cost"]
+                    if "question" in df.columns:
+                        column_order.insert(2, "question")
+                    if "timestamp" in df.columns:
+                        column_order.append("timestamp")
+                        
+                    # Filter columns that actually exist in the dataframe
+                    column_order = [col for col in column_order if col in df.columns]
+                    
+                    # Display dataframe with formatted columns
+                    st.dataframe(df[column_order].style.format({
+                        "cost": "${:.5f}",
+                        "prompt_tokens": "{:,}",
+                        "completion_tokens": "{:,}",
+                        "total_tokens": "{:,}"
+                    }), use_container_width=True)
+                    
+                    # Breakdown by model
+                    st.subheader("Usage by Model")
+                    model_usage = df.groupby("model").agg({
+                        "prompt_tokens": "sum",
+                        "completion_tokens": "sum", 
+                        "total_tokens": "sum",
+                        "cost": "sum"
+                    }).reset_index()
+                    
+                    st.dataframe(model_usage.style.format({
+                        "cost": "${:.5f}",
+                        "prompt_tokens": "{:,}",
+                        "completion_tokens": "{:,}",
+                        "total_tokens": "{:,}"
+                    }), use_container_width=True)
+                    
+                    # Pie chart of token usage by model
+                    if len(model_usage) > 1:  # Only show chart if multiple models
+                        try:
+                            import matplotlib.pyplot as plt
+                            
+                            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+                            
+                            # Token distribution
+                            ax1.pie(model_usage["total_tokens"], labels=model_usage["model"], autopct='%1.1f%%')
+                            ax1.set_title("Token Distribution by Model")
+                            
+                            # Cost distribution
+                            ax2.pie(model_usage["cost"], labels=model_usage["model"], autopct='%1.1f%%')
+                            ax2.set_title("Cost Distribution by Model")
+                            
+                            st.pyplot(fig)
+                        except Exception as e:
+                            st.warning(f"Could not generate charts: {str(e)}")
+# Main Page Logic
     elif st.session_state.get("next_clicked", False):
-        st.image("images/markdown_viewer.png", use_container_width=True)
+        # st.image("images/markdown_viewer.png", use_container_width=True)
         if st.session_state.processing_type == "PDF Extraction":
             # Display tools being used
             if st.session_state.service_type == "Open Source":

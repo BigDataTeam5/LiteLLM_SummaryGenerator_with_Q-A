@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 import redis.asyncio as redis_async
 from dotenv import load_dotenv
 import traceback
+import tempfile
 
 # Fix the Python path to correctly find modules
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +32,6 @@ from llm_extractor.litellm_query_generator import (
     summarize_markdown as litellm_summarize_markdown,
     qa_markdown as litellm_qa_markdown,
     MODEL_CONFIGS,
-    generate_llm_response
 )
 
 # Stream names - ensuring they match with main.py
@@ -104,8 +104,8 @@ class LLMWorker:
         task_type = "summary" if stream_name == SUMMARY_STREAM else "qa"
         
         logger.info(f"Task type: {task_type}")
-        model_id = request_data.get("model", request_data.get("model_id", "gemini"))
-        content_type = request_data.get("content_type", "markdown")
+        model_id = request_data.get("model", request_data.get("model_id"))
+        content_type = request_data.get("content_type")
         logger.info(f"Using model: {model_id}, Content type: {content_type}")
         
         try:
@@ -122,15 +122,65 @@ class LLMWorker:
                     }
                 
                 logger.info(f"Summarizing markdown content with {model_id}")
+                
+                # Check if content is a valid file path or raw content
+                temp_file_path = None
+                if not os.path.exists(content):  # Content is not a valid file path
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".md", mode="w", encoding="utf-8") as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    content_path = temp_file_path
+                else:
+                    content_path = content
+                
                 result = await asyncio.to_thread(
                     litellm_summarize_markdown,
-                    content,
+                    content_path,
                     model_id
                 )
+                
+                # Clean up temporary file if we created one
+                if temp_file_path and os.path.exists(temp_file_path):
+                    try:
+                        os.unlink(temp_file_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete temp file {temp_file_path}: {e}")
+                
+                # Extract data from result
+                if isinstance(result, dict):
+                    summary = result.get("summary", "No summary available")
+                    usage_data = result.get("usage", {})
+                    # Ensure usage data has all required fields
+                    if isinstance(usage_data, dict):
+                        usage_data.setdefault("prompt_tokens", 0)
+                        usage_data.setdefault("completion_tokens", 0)
+                        usage_data.setdefault("total_tokens", usage_data.get("prompt_tokens", 0) + usage_data.get("completion_tokens", 0))
+                else:
+                    summary = result
+                    usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                
+                # Create summary-specific response
+                processing_time = asyncio.get_event_loop().time() - start_time
+                response = {
+                    "request_id": request_id,
+                    "status": "completed",
+                    "model_id": model_id,
+                    "model_name": MODEL_CONFIGS.get(model_id, {"name": model_id})["name"],
+                    "content_type": content_type,
+                    "task_type": task_type,
+                    "processing_time_seconds": processing_time,
+                    "summary": summary,
+                    "usage": usage_data,
+                    "timestamp": time.time()
+                }
+                
+                return response
                 
             elif task_type == "qa":
                 # Process Q&A request
                 content = request_data.get("content")
+                question = request_data.get("question")
+                
                 if not content:
                     return {
                         "request_id": request_id,
@@ -138,7 +188,6 @@ class LLMWorker:
                         "error": "Content is required for Q&A"
                     }
                 
-                question = request_data.get("question")
                 if not question:
                     return {
                         "request_id": request_id,
@@ -147,42 +196,68 @@ class LLMWorker:
                     }
                 
                 logger.info(f"Answering question with {model_id}")
+                
+                # Check if content is a valid file path or raw content
+                temp_file_path = None
+                if not os.path.exists(content):  # Content is not a valid file path
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".md", mode="w", encoding="utf-8") as temp_file:
+                        temp_file.write(content)
+                        temp_file_path = temp_file.name
+                    content_path = temp_file_path
+                else:
+                    content_path = content
+                
                 result = await asyncio.to_thread(
                     litellm_qa_markdown,
-                    content,
+                    content_path,
                     question,
                     model_id
                 )
                 
+                # Clean up temporary file if we created one
+                if temp_file_path and os.path.exists(temp_file_path):
+                    try:
+                        os.unlink(temp_file_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete temp file {temp_file_path}: {e}")
+                
+                # Extract data from result
+                if isinstance(result, dict):
+                    answer = result.get("answer", "No answer available")
+                    usage_data = result.get("usage", {})
+                    # Ensure usage data has all required fields
+                    if isinstance(usage_data, dict):
+                        usage_data.setdefault("prompt_tokens", 0)
+                        usage_data.setdefault("completion_tokens", 0)
+                        usage_data.setdefault("total_tokens", usage_data.get("prompt_tokens", 0) + usage_data.get("completion_tokens", 0))
+                else:
+                    answer = result
+                    usage_data = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                
+                # Create QA-specific response
+                processing_time = asyncio.get_event_loop().time() - start_time
+                response = {
+                    "request_id": request_id,
+                    "status": "completed",
+                    "model_id": model_id, 
+                    "model_name": MODEL_CONFIGS.get(model_id, {"name": model_id})["name"],
+                    "content_type": content_type,
+                    "task_type": task_type,
+                    "processing_time_seconds": processing_time,
+                    "question": question,
+                    "answer": answer,
+                    "usage": usage_data,
+                    "timestamp": time.time()
+                }
+                
+                return response
+                
             else:
                 return {
-                    "request_id": request_id,
+                    "request_id": request_id, 
                     "status": "error",
                     "error": f"Invalid task type: {task_type}"
                 }
-            
-            processing_time = asyncio.get_event_loop().time() - start_time
-            logger.info(f"Processed {task_type} request {request_id} in {processing_time:.2f}s")
-            
-            # Prepare response based on task type
-            response = {
-                "request_id": request_id,
-                "status": "completed",
-                "model_id": model_id,
-                "model_name": MODEL_CONFIGS.get(model_id, {"name": model_id})["name"],
-                "content_type": content_type,
-                "task_type": task_type,
-                "processing_time_seconds": processing_time
-            }
-            
-            # Add task-specific fields
-            if task_type == "summary":
-                response["summary"] = result
-            elif task_type == "qa":
-                response["question"] = request_data.get("question")
-                response["answer"] = result
-            
-            return response
         
         except Exception as e:
             logger.error(f"Error processing {task_type} request: {e}")
@@ -200,7 +275,15 @@ class LLMWorker:
             redis_data = {}
             for k, v in response_data.items():
                 if v is not None:
-                    redis_data[k] = str(v) if not isinstance(v, str) else v
+                    if k == "usage" and isinstance(v, dict):
+                        # Properly format usage data as JSON string to preserve structure
+                        redis_data[k] = json.dumps(v)
+                    else:
+                        redis_data[k] = str(v) if not isinstance(v, str) else v
+            
+            # Add timestamp for the frontend display if not already present
+            if "timestamp" not in redis_data:
+                redis_data["timestamp"] = str(time.time())
             
             # Add to result stream
             await self.redis.xadd(RESULT_STREAM, redis_data, maxlen=1000)

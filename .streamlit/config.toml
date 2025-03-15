@@ -1,3 +1,5 @@
 [server]
 runOnSave = true
 fileWatcherType = "poll"
+[connections]
+fastapi= "http://localhost:8080/"

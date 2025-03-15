@@ -1,7 +1,9 @@
-# Assignment 4 - Part 1
+# LiteLLM_SummaryGenerator_with_Q-A
 
 
 ## Assignment Overview
+
+![alt text](image.png)
 
 
 1. **Develop a Streamlit web application** that:

@@ -169,6 +169,31 @@ files = [
 ]
 
 [[package]]
+name = "anthropic"
+version = "0.49.0"
+description = "The official Python library for the anthropic API"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "anthropic-0.49.0-py3-none-any.whl", hash = "sha256:bbc17ad4e7094988d2fa86b87753ded8dce12498f4b85fe5810f208f454a8375"},
+    {file = "anthropic-0.49.0.tar.gz", hash = "sha256:c09e885b0f674b9119b4f296d8508907f6cff0009bc20d5cf6b35936c40b4398"},
+]
+
+[package.dependencies]
+anyio = ">=3.5.0,<5"
+distro = ">=1.7.0,<2"
+httpx = ">=0.23.0,<1"
+jiter = ">=0.4.0,<1"
+pydantic = ">=1.9.0,<3"
+sniffio = "*"
+typing-extensions = ">=4.10,<5"
+
+[package.extras]
+bedrock = ["boto3 (>=1.28.57)", "botocore (>=1.31.57)"]
+vertex = ["google-auth (>=2,<3)"]
+
+[[package]]
 name = "anyio"
 version = "4.8.0"
 description = "High level compatibility layer for multiple asynchronous event loop implementations"
@@ -302,50 +327,20 @@ files = [
 
 [[package]]
 name = "azure-ai-documentintelligence"
-version = "1.0.0"
+version = "1.0.1"
 description = "Microsoft Azure AI Document Intelligence Client Library for Python"
 optional = false
 python-versions = ">=3.8"
 groups = ["backend"]
 files = [
-    {file = "azure_ai_documentintelligence-1.0.0-py3-none-any.whl", hash = "sha256:cdedb1a67c075f58f47a413ec5846bf8d532a83a71f0c51ec49ce9b5bfe2a519"},
-    {file = "azure_ai_documentintelligence-1.0.0.tar.gz", hash = "sha256:c8b6efc0fc7e65d7892c9585cfd256f7d8b3f2b46cecf92c75ab82e629eac253"},
+    {file = "azure_ai_documentintelligence-1.0.1-py3-none-any.whl", hash = "sha256:0b6fcc99ff343dd8359accd63576f35047dd18cc89b5fd74414fe0bd87d8e566"},
+    {file = "azure_ai_documentintelligence-1.0.1.tar.gz", hash = "sha256:246ec4d95316585175b38f687ffde17b394620221af966f635cec15a81c5b7cc"},
 ]
 
 [package.dependencies]
 azure-core = ">=1.30.0"
 isodate = ">=0.6.1"
 typing-extensions = ">=4.6.0"
-
-[[package]]
-name = "azure-ai-formrecognizer"
-version = "3.3.3"
-description = "Microsoft Azure Form Recognizer Client Library for Python"
-optional = false
-python-versions = ">=3.8"
-groups = ["backend"]
-files = [
-    {file = "azure-ai-formrecognizer-3.3.3.tar.gz", hash = "sha256:9fc09788bbb65866630fa870cca1933bfd7298b8055236530bcc0e40d81fcccf"},
-    {file = "azure_ai_formrecognizer-3.3.3-py3-none-any.whl", hash = "sha256:81fc1abda8bd898426ee3bbc1b9c6bd164514201ce282129a31d4664f9d1f3bc"},
-]
-
-[package.dependencies]
-azure-common = ">=1.1"
-azure-core = ">=1.23.0"
-msrest = ">=0.6.21"
-typing-extensions = ">=4.0.1"
-
-[[package]]
-name = "azure-common"
-version = "1.1.28"
-description = "Microsoft Azure Client Library for Python (Common)"
-optional = false
-python-versions = "*"
-groups = ["backend"]
-files = [
-    {file = "azure-common-1.1.28.zip", hash = "sha256:4ac0cd3214e36b6a1b6a442686722a5d8cc449603aa833f3f0f40bda836704a3"},
-    {file = "azure_common-1.1.28-py2.py3-none-any.whl", hash = "sha256:5c12d3dcf4ec20599ca6b0d3e09e86e146353d443e7fcc050c9a19c1f9df20ad"},
-]
 
 [[package]]
 name = "azure-core"
@@ -513,35 +508,6 @@ files = [
 ]
 
 [[package]]
-name = "camelot-py"
-version = "0.10.1"
-description = "PDF Table Extraction for Humans."
-optional = false
-python-versions = "*"
-groups = ["backend"]
-files = [
-    {file = "camelot-py-0.10.1.tar.gz", hash = "sha256:8f9f8d937164e8e11b62aa3fed6af086bfb3fddb5e505b91c8886c8d657bd1fa"},
-    {file = "camelot_py-0.10.1-py3-none-any.whl", hash = "sha256:5d15f52dbf693a8234343429bbb1e9c0bd258a5cf78e48b7381171a0286fd2c7"},
-]
-
-[package.dependencies]
-chardet = ">=3.0.4"
-click = ">=6.7"
-numpy = ">=1.13.3"
-openpyxl = ">=2.5.8"
-pandas = ">=0.23.4"
-"pdfminer.six" = ">=20200726"
-PyPDF2 = ">=1.26.0"
-tabulate = ">=0.8.9"
-
-[package.extras]
-all = ["ghostscript (>=0.7)", "matplotlib (>=2.2.3)", "opencv-python (>=3.4.2.17)", "pdftopng (>=0.2.3)"]
-base = ["ghostscript (>=0.7)", "opencv-python (>=3.4.2.17)", "pdftopng (>=0.2.3)"]
-cv = ["ghostscript (>=0.7)", "opencv-python (>=3.4.2.17)", "pdftopng (>=0.2.3)"]
-dev = ["Sphinx (>=3.1.2)", "codecov (>=2.0.15)", "ghostscript (>=0.7)", "matplotlib (>=2.2.3)", "opencv-python (>=3.4.2.17)", "pdftopng (>=0.2.3)", "pytest (>=5.4.3)", "pytest-cov (>=2.10.0)", "pytest-mpl (>=0.11)", "pytest-runner (>=5.2)", "sphinx-autobuild (>=2021.3.14)"]
-plot = ["matplotlib (>=2.2.3)"]
-
-[[package]]
 name = "certifi"
 version = "2025.1.31"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -633,18 +599,6 @@ files = [
 
 [package.dependencies]
 pycparser = "*"
-
-[[package]]
-name = "chardet"
-version = "5.2.0"
-description = "Universal encoding detector for Python 3"
-optional = false
-python-versions = ">=3.7"
-groups = ["backend"]
-files = [
-    {file = "chardet-5.2.0-py3-none-any.whl", hash = "sha256:e1cf59446890a00105fe7b7912492ea04b6e6f06d4b742b2c788469e34c82970"},
-    {file = "chardet-5.2.0.tar.gz", hash = "sha256:1b3b6ff479a8c414bc3fa2c0852995695c4a026dcd6d0633b2dd092ca39c1cf7"},
-]
 
 [[package]]
 name = "charset-normalizer"
@@ -2631,28 +2585,6 @@ msal = ">=1.29,<2"
 portalocker = ">=1.4,<3"
 
 [[package]]
-name = "msrest"
-version = "0.7.1"
-description = "AutoRest swagger generator Python client runtime."
-optional = false
-python-versions = ">=3.6"
-groups = ["backend"]
-files = [
-    {file = "msrest-0.7.1-py3-none-any.whl", hash = "sha256:21120a810e1233e5e6cc7fe40b474eeb4ec6f757a15d7cf86702c369f9567c32"},
-    {file = "msrest-0.7.1.zip", hash = "sha256:6e7661f46f3afd88b75667b7187a92829924446c7ea1d169be8c4bb7eeb788b9"},
-]
-
-[package.dependencies]
-azure-core = ">=1.24.0"
-certifi = ">=2017.4.17"
-isodate = ">=0.6.0"
-requests = ">=2.16,<3.0"
-requests-oauthlib = ">=0.5.0"
-
-[package.extras]
-async = ["aiodns ; python_version >= \"3.5\"", "aiohttp (>=3.0) ; python_version >= \"3.5\""]
-
-[[package]]
 name = "multidict"
 version = "6.1.0"
 description = "multidict implementation"
@@ -3220,23 +3152,6 @@ files = [
     {file = "nvidia_nvtx_cu12-12.4.127-py3-none-manylinux2014_x86_64.whl", hash = "sha256:781e950d9b9f60d8241ccea575b32f5105a5baf4c2351cab5256a24869f12a1a"},
     {file = "nvidia_nvtx_cu12-12.4.127-py3-none-win_amd64.whl", hash = "sha256:641dccaaa1139f3ffb0d3164b4b84f9d253397e38246a4f2f36728b48566d485"},
 ]
-
-[[package]]
-name = "oauthlib"
-version = "3.2.2"
-description = "A generic, spec-compliant, thorough implementation of the OAuth request-signing logic"
-optional = false
-python-versions = ">=3.6"
-groups = ["backend"]
-files = [
-    {file = "oauthlib-3.2.2-py3-none-any.whl", hash = "sha256:8139f29aac13e25d502680e9e19963e83f16838d48a0d71c287fe40e7067fbca"},
-    {file = "oauthlib-3.2.2.tar.gz", hash = "sha256:9859c40929662bec5d64f34d01c99e093149682a3f38915dc0655d5a633dd918"},
-]
-
-[package.extras]
-rsa = ["cryptography (>=3.0.0)"]
-signals = ["blinker (>=1.4.0)"]
-signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
 
 [[package]]
 name = "olefile"
@@ -4092,19 +4007,20 @@ tests = ["coverage[toml] (==5.0.4)", "pytest (>=6.0.0,<7.0.0)"]
 
 [[package]]
 name = "pymupdf"
-version = "1.25.3"
+version = "1.25.4"
 description = "A high performance Python library for data extraction, analysis, conversion & manipulation of PDF (and other) documents."
 optional = false
 python-versions = ">=3.9"
 groups = ["backend"]
 files = [
-    {file = "pymupdf-1.25.3-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:96878e1b748f9c2011aecb2028c5f96b5a347a9a91169130ad0133053d97915e"},
-    {file = "pymupdf-1.25.3-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:6ef753005b72ebfd23470f72f7e30f61e21b0b5e748045ec5b8f89e6e3068d62"},
-    {file = "pymupdf-1.25.3-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:46d90c4f9e62d1856e8db4b9f04a202ff4a7f086a816af73abdc86adb7f5e25a"},
-    {file = "pymupdf-1.25.3-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a5de51efdbe4d486b6c1111c84e8a231cbfb426f3d6ff31ab530ad70e6f39756"},
-    {file = "pymupdf-1.25.3-cp39-abi3-win32.whl", hash = "sha256:bca72e6089f985d800596e22973f79cc08af6cbff1d93e5bda9248326a03857c"},
-    {file = "pymupdf-1.25.3-cp39-abi3-win_amd64.whl", hash = "sha256:4fb357438c9129fbf939b5af85323434df64e36759c399c376b62ad6da95498c"},
-    {file = "pymupdf-1.25.3.tar.gz", hash = "sha256:b640187c64c5ac5d97505a92e836da299da79c2f689f3f94a67a37a493492193"},
+    {file = "pymupdf-1.25.4-cp39-abi3-macosx_10_9_x86_64.whl", hash = "sha256:b39ab5fc0cc793f2a93908cb4dc13182e61e9ace3476850ebf0e505f65355475"},
+    {file = "pymupdf-1.25.4-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:72ac2a460e15a4b75fb22d0bdeb9eb9b3bd6ab44d5288e56f85ff9e4241d0830"},
+    {file = "pymupdf-1.25.4-cp39-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:bd16e264438b01bf6f6b8722deb49df20c0a9a7be2b4a8e29dcb7b5183d8b42a"},
+    {file = "pymupdf-1.25.4-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:72817aa5f5023632346eee4aad0c32018d7879cf9a72e1820054dc9d8c48150f"},
+    {file = "pymupdf-1.25.4-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a8c23242d209512437187dc728001fc7c65c2dd9d37b50071f34c5cd745194a3"},
+    {file = "pymupdf-1.25.4-cp39-abi3-win32.whl", hash = "sha256:d90e6087f9b153999fa9f2c4709488fb0355de0302ec502a76c4fc0c0a0c535e"},
+    {file = "pymupdf-1.25.4-cp39-abi3-win_amd64.whl", hash = "sha256:af8fa1f7920b3b27343b2511cb9fc44baf2bad8b948db0b0f9d5b2fa589cb305"},
+    {file = "pymupdf-1.25.4.tar.gz", hash = "sha256:5f189466b68901055a9ddc77dc1c91cba081a60964f0caa6ff5b9b87001a0194"},
 ]
 
 [[package]]
@@ -4144,21 +4060,6 @@ dev = ["black", "flit", "pip-tools", "pre-commit (<2.18.0)", "pytest-cov", "pyte
 docs = ["myst_parser", "sphinx", "sphinx_rtd_theme"]
 full = ["Pillow (>=8.0.0)", "cryptography"]
 image = ["Pillow (>=8.0.0)"]
-
-[[package]]
-name = "pypdf2"
-version = "2.10.5"
-description = "A pure-python PDF library capable of splitting, merging, cropping, and transforming PDF files"
-optional = false
-python-versions = ">=3.6"
-groups = ["main", "backend"]
-files = [
-    {file = "PyPDF2-2.10.5-py3-none-any.whl", hash = "sha256:ad48e18a3b93de2a769e7d70b025baea8060c3f31829b83b031d842125f059b6"},
-    {file = "PyPDF2-2.10.5.tar.gz", hash = "sha256:a568453329f8ad73bb001bcf70fd2fd97ec6525669c54552b2b9e99c2e469459"},
-]
-
-[package.extras]
-crypto = ["PyCryptodome"]
 
 [[package]]
 name = "pypdfium2"
@@ -4650,25 +4551,6 @@ urllib3 = ">=1.21.1,<3"
 [package.extras]
 socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
-
-[[package]]
-name = "requests-oauthlib"
-version = "2.0.0"
-description = "OAuthlib authentication support for Requests."
-optional = false
-python-versions = ">=3.4"
-groups = ["backend"]
-files = [
-    {file = "requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9"},
-    {file = "requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36"},
-]
-
-[package.dependencies]
-oauthlib = ">=3.0.0"
-requests = ">=2.0.0"
-
-[package.extras]
-rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
 
 [[package]]
 name = "rich"
@@ -6414,4 +6296,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "aa1e3ce76d250ec7d27367f0c02fd3651224dc3dfe48d280c9f094034ddf0184"
+content-hash = "5f5e6266559473b716bae85fc903cc472d10abb394f20a6f68308fddf6d89aa4"
