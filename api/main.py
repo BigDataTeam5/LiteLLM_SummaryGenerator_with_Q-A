@@ -20,13 +20,18 @@ import json
 import asyncio
 import tempfile
 # Add the root directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(root_dir)
+
+# Add the api directory to Python path as well (since PDF_Extraction_and_Markdown_Generation is in api/)
+api_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(api_dir)
+
 from api.docklingextraction import main
 from logger import api_logger, pdf_logger, s3_logger, error_logger, request_logger, log_request, log_error
 from llm_extractor.litellm_query_generator import MODEL_CONFIGS
 import threading
 from worker import main as worker_main
-
 # Load environment variables from .env file
 load_dotenv()
 

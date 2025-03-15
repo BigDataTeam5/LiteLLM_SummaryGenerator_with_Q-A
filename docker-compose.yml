@@ -30,9 +30,7 @@ services:
   #     - "8501:8501"
   #   volumes:
   #     - ./frontend:/app
-  #   environment:
-  #       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-  #       - STREAMLIT_SERVER_PORT=8501        
+    
   #   depends_on:
   #     - api
   #   networks:
