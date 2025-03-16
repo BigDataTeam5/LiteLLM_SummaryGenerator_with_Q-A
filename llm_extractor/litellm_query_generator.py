@@ -6,25 +6,24 @@ from pathlib import Path
 import litellm
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables and configure debug logging
 load_dotenv()
+os.environ["LITELLM_LOG"] = "DEBUG"  # Replace deprecated set_verbose
 
-# Configure LiteLLM with API keys - use provider-specific attributes for each API
-litellm.gemini_key = os.getenv("GEMINI_API_KEY")  # For Gemini as default
-litellm.openai_api_key = os.getenv("OPENAI_API_KEY")  # For OpenAI models
-litellm.anthropic_api_key = os.getenv("CLAUDE_API_KEY")  # For Anthropic models
-litellm.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")  # For DeepSeek models (note the case)
-litellm.xai_api_key = os.getenv("GROK_API_KEY")  # For Grok models
-if litellm.xai_api_key:
-    # Remove any whitespace that might have been accidentally added
-    litellm.xai_api_key = litellm.xai_api_key.strip()
+# Configure LiteLLM with API keys
+litellm.gemini_key = os.getenv("GEMINI_API_KEY")
+os.environ["ANTHROPIC_API_KEY"] = os.getenv("CLAUDE_API_KEY")
+litellm.anthropic_api_key = os.getenv("CLAUDE_API_KEY")
+os.environ["DEEPSEEK_API_KEY"] = os.getenv("DEEP_SEEK_API_KEY")
+litellm.deepseek_api_key = os.getenv("DEEP_SEEK_API_KEY")
+
 # Debug output to check API keys
 print(f"API Keys Status:")
 print(f"- Gemini:    {'✓' if litellm.gemini_key else '✗'}")
-print(f"- OpenAI:    {'✓' if litellm.openai_api_key else '✗'}")
-print(f"- Anthropic: {'✓' if litellm.anthropic_api_key else '✗'}")
+print(f"- Anthropic: {'✓' if os.getenv('ANTHROPIC_API_KEY') else '✗'}")
 print(f"- DeepSeek:  {'✓' if litellm.deepseek_api_key else '✗'}")
-print(f"- Grok:      {'✓' if litellm.xai_api_key else '✗'}")
+print("DEEPSEEK_Key is", os.getenv('DEEP_SEEK_API_KEY'))
+print("Anthropic_Key is", os.getenv('ANTHROPIC_API_KEY'))
 
 # Model configurations
 MODEL_CONFIGS = {
@@ -50,11 +49,11 @@ MODEL_CONFIGS = {
         "supports_images": False,
     },
     "claude": {
-        "name": "Claude 3 Opus",
-        "model": "anthropic/claude-3-5-sonnet-20241022",
+        "name": "Claude 3 Sonnet",
+        "model": "claude/claude-3-5-sonnet-20240620",  # Updated with provider prefix
         "max_input_tokens": 100000,
-        "max_output_tokens": 4096,
-        "supports_images": False, 
+        "max_output_tokens": 4096, 
+        "supports_images": True,
     },
     "grok": {
         "name": "Grok",
@@ -142,7 +141,7 @@ def process_markdown_with_images(markdown_path: str) -> Dict[str, Any]:
 
 def create_llm_response_from_markdown(
     markdown_path: str, 
-    model_id: str = "gemini",
+    model_id: str = "claude-3-5-sonnet-20241022",
     task_type: Literal["summary", "qa"] = "summary",
     question: Optional[str] = None,
     max_images: int = 5
@@ -171,22 +170,23 @@ def create_llm_response_from_markdown(
         model_config = MODEL_CONFIGS[model_id]
         
         # Check API key availability for the selected model before proceeding
-        model_prefix = model_config["model"].split("/")[0]
+        model_config = MODEL_CONFIGS[model_id]
+        model_name = model_config["model"]
         api_key_status = False
         
-        if model_prefix == "gemini" and litellm.gemini_key:
+        if model_id == "gemini" and litellm.gemini_key:
             api_key_status = True
-        elif model_prefix == "openai" and litellm.openai_api_key:
+        elif model_id == "openai" and litellm.openai_api_key:
             api_key_status = True
-        elif model_prefix == "anthropic" and litellm.anthropic_api_key:
+        elif model_id == "claude" and litellm.anthropic_api_key: 
             api_key_status = True
-        elif model_prefix == "deepseek" and litellm.deepseek_api_key:
+        elif model_id == "deepseek" and litellm.deepseek_api_key:
             api_key_status = True
-        elif model_prefix == "xai" and litellm.xai_api_key:
+        elif model_id == "xai" and litellm.xai_api_key:
             api_key_status = True
             
         if not api_key_status:
-            return {"content": f"Error: API key not found for {model_prefix}. Please check your .env file.", "usage": {"total_tokens": 0}}
+            return {"content": f"Error: API key not found for {model_id}. Please check your .env file.", "usage": {"total_tokens": 0}}
         
         # Check if file exists
         if not os.path.exists(markdown_path):
@@ -262,13 +262,36 @@ def create_llm_response_from_markdown(
                         }
                     ]
         
-        # Call model using LiteLLM
-        response = litellm.completion(
-            model=model_config["model"],
-            messages=messages,
-            temperature=0.3,
-            max_tokens=model_config["max_output_tokens"]
-        )
+        # Call model using LiteLLM with specific configurations per model
+        if model_id == "claude":
+            response = litellm.completion(
+                model="anthropic/claude-3-5-sonnet-20240620",  # Updated with provider prefix
+                messages=messages,
+                temperature=0.3,
+                max_tokens=model_config["max_output_tokens"],
+                api_key=os.getenv("CLAUDE_API_KEY")
+            )
+        elif model_id == "gemini":
+            response = litellm.completion(
+                model="gemini-1.5-flash",  # Direct model name
+                messages=messages,
+                temperature=0.3,
+                max_tokens=model_config["max_output_tokens"]
+            )
+        elif model_id == "deepseek":
+            response = litellm.completion(
+                model="deepseek/deepseek-reasoner",  # Updated with provider prefix
+                messages=messages,
+                temperature=0.3,
+                max_tokens=model_config["max_output_tokens"]  # Explicitly pass API key
+            )
+        else:
+            response = litellm.completion(
+                model=model_config["model"],
+                messages=messages,
+                temperature=0.3,
+                max_tokens=model_config["max_output_tokens"]
+            )
         
         # Extract and return the response with token usage
         if response and response.choices and response.choices[0].message.content:
