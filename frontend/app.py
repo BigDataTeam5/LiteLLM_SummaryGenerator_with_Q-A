@@ -5,6 +5,7 @@ import sys
 import os
 import json
 import uuid
+import toml
 sys.path.append("LLM_Interactor")
 # from logger import api_logger
 
@@ -41,11 +42,31 @@ if "text_summary_result" not in st.session_state:
 if "processing_text_summary" not in st.session_state:
     st.session_state.processing_text_summary = False
 
-# FastAPI Base URL - Make it configurable with environment variable support
+# FastAPI Base URL - Simple configuration
 if "fastapi_url" not in st.session_state:
-    # Get the FastAPI URL from environment variable if available, else use default
-    default_url = os.environ.get("FASTAPI_URL", "http://localhost:8080")
-    st.session_state.fastapi_url = default_url
+    try:
+        # First try to get URL from environment variable (for Docker)
+        fastapi_url = os.environ.get("FASTAPI_URL")
+        
+        # If not set, try config file
+        if not fastapi_url:
+            config_path = os.path.join(os.path.dirname(__file__), ".streamlit", "config.toml")
+            if os.path.exists(config_path):
+                config_data = toml.load(config_path)
+                fastapi_url = config_data.get("connections", {}).get("fastapi")
+        
+        # If still not set, use the deployed FastAPI service URL as fallback
+        if fastapi_url:
+            st.session_state.fastapi_url = fastapi_url
+        else:
+            # Use deployed FastAPI service instead of localhost
+            st.session_state.fastapi_url = "http://localhost:8080/"
+            
+    except Exception as e:
+        # If config file can't be read, use deployed FastAPI service as default
+        st.session_state.fastapi_url = "http://localhost:8080/"
+        print(f"Error setting FastAPI URL: {e}")
+                
 if "api_connected" not in st.session_state:
     st.session_state.api_connected = True
 if "markdown_summaries" not in st.session_state:
@@ -338,9 +359,11 @@ def submit_summarization(content, model):
         with st.spinner("⏳ Generating summary with LLM... This may take a moment."):
             # Set processing state
             st.session_state.processing_summary = True
+            request_id = f"summary_{uuid.uuid4()}"
             
             # Prepare the request payload
             payload = {
+                "request_id": request_id,
                 "content": content,
                 "model": model,
                 "content_type": "markdown"
@@ -348,7 +371,7 @@ def submit_summarization(content, model):
             
             # Submit to API
             response = requests.post(
-                st.session_state.SUMMARIZE_API,  # Fixed: Use the correct API endpoint
+                st.session_state.SUMMARIZE_API, 
                 json=payload
             )
             
@@ -356,12 +379,7 @@ def submit_summarization(content, model):
                 # Got a job ID, need to poll for result
                 job_id = response.json().get("request_id")
                 result = poll_for_llm_result(job_id)
-                
-                # Debug token usage data
-                st.write(f"DEBUG: Raw result from API: {result}")
-                if result and "usage" in result:
-                    st.write(f"DEBUG: Token usage from API: {result['usage']}")
-                
+                                
                 if result and "error" not in result:
                     # Store the summary in session state
                     st.session_state.summary_result = result

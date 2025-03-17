@@ -5,26 +5,43 @@ from typing import List, Dict, Any, Optional, Literal
 from pathlib import Path
 import litellm
 from dotenv import load_dotenv
+import time
 
-# Load environment variables and configure debug logging
-load_dotenv()
-os.environ["LITELLM_LOG"] = "DEBUG"  # Replace deprecated set_verbose
+# Function to force reload environment variables
+def reload_env_variables():
+    """Force reload environment variables from .env file, clearing any cached values"""
+    # Clear specific environment variables we're using
+    for key in ["GEMINI_API_KEY", "ANTHROPIC_API_KEY", "DEEP_SEEK_API_KEY", 
+                "OPENAI_API_KEY", "GROK_API_KEY"]:
+        if key in os.environ:
+            del os.environ[key]
+    
+    # Get the full path to .env file
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    print(f"Loading .env from: {env_path}")
+    print(f"File exists: {os.path.exists(env_path)}")
+    
+    # Load with dotenv with override flag
+    load_dotenv('.env',override=True)
+    
+    # Add a timestamp to verify it's reloading
+    print(f"Environment reloaded at: {time.strftime('%H:%M:%S')}")
 
+reload_env_variables()
 # Configure LiteLLM with API keys
 litellm.gemini_key = os.getenv("GEMINI_API_KEY")
-os.environ["ANTHROPIC_API_KEY"] = os.getenv("CLAUDE_API_KEY")
-litellm.anthropic_api_key = os.getenv("CLAUDE_API_KEY")
-os.environ["DEEPSEEK_API_KEY"] = os.getenv("DEEP_SEEK_API_KEY")
+litellm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 litellm.deepseek_api_key = os.getenv("DEEP_SEEK_API_KEY")
+litellm.openai_api_key = os.getenv("OPENAI_API_KEY")
+litellm.xai_api_key = os.getenv("GROK_API_KEY")
 
 # Debug output to check API keys
 print(f"API Keys Status:")
 print(f"- Gemini:    {'✓' if litellm.gemini_key else '✗'}")
-print(f"- Anthropic: {'✓' if os.getenv('ANTHROPIC_API_KEY') else '✗'}")
+print(f"- Anthropic: {'✓' if litellm.anthropic_api_key else '✗'}")
 print(f"- DeepSeek:  {'✓' if litellm.deepseek_api_key else '✗'}")
-print("DEEPSEEK_Key is", os.getenv('DEEP_SEEK_API_KEY'))
-print("Anthropic_Key is", os.getenv('ANTHROPIC_API_KEY'))
-
+print(f"- OpenAI:    {'✓' if litellm.openai_api_key else '✗'}")
+print(f"- Grok:      {'✓' if litellm.xai_api_key else '✗'}")
 # Model configurations
 MODEL_CONFIGS = {
     "gpt4o": {
@@ -50,14 +67,14 @@ MODEL_CONFIGS = {
     },
     "claude": {
         "name": "Claude 3 Sonnet",
-        "model": "claude/claude-3-5-sonnet-20240620",  # Updated with provider prefix
+        "model": "anthropic/claude-3-5-sonnet-20240620",  # Updated with provider prefix
         "max_input_tokens": 100000,
         "max_output_tokens": 4096, 
         "supports_images": True,
     },
     "grok": {
         "name": "Grok",
-        "model": "xai/grok-1", 
+        "model": "xai/grok-2-latest", 
         "max_input_tokens": 8192,
         "max_output_tokens": 2048,
         "supports_images": True,
@@ -141,7 +158,7 @@ def process_markdown_with_images(markdown_path: str) -> Dict[str, Any]:
 
 def create_llm_response_from_markdown(
     markdown_path: str, 
-    model_id: str = "claude-3-5-sonnet-20241022",
+    model_id: str,
     task_type: Literal["summary", "qa"] = "summary",
     question: Optional[str] = None,
     max_images: int = 5
@@ -176,13 +193,13 @@ def create_llm_response_from_markdown(
         
         if model_id == "gemini" and litellm.gemini_key:
             api_key_status = True
-        elif model_id == "openai" and litellm.openai_api_key:
+        elif model_id == "gpt4o" and litellm.openai_api_key:
             api_key_status = True
         elif model_id == "claude" and litellm.anthropic_api_key: 
             api_key_status = True
         elif model_id == "deepseek" and litellm.deepseek_api_key:
             api_key_status = True
-        elif model_id == "xai" and litellm.xai_api_key:
+        elif model_id == "grok" and litellm.xai_api_key:
             api_key_status = True
             
         if not api_key_status:
@@ -265,32 +282,43 @@ def create_llm_response_from_markdown(
         # Call model using LiteLLM with specific configurations per model
         if model_id == "claude":
             response = litellm.completion(
-                model="anthropic/claude-3-5-sonnet-20240620",  # Updated with provider prefix
+                model=model_config["model"],  
                 messages=messages,
                 temperature=0.3,
                 max_tokens=model_config["max_output_tokens"],
-                api_key=os.getenv("CLAUDE_API_KEY")
+                api_key= litellm.anthropic_api_key
             )
         elif model_id == "gemini":
             response = litellm.completion(
-                model="gemini-1.5-flash",  # Direct model name
+                model=model_config["model"], 
                 messages=messages,
                 temperature=0.3,
-                max_tokens=model_config["max_output_tokens"]
+                max_tokens=model_config["max_output_tokens"],
+                api_key= litellm.gemini_key
             )
         elif model_id == "deepseek":
             response = litellm.completion(
-                model="deepseek/deepseek-reasoner",  # Updated with provider prefix
+                model=model_config["model"], 
                 messages=messages,
                 temperature=0.3,
-                max_tokens=model_config["max_output_tokens"]  # Explicitly pass API key
+                max_tokens=model_config["max_output_tokens"],
+                api_key= litellm.deepseek_api_key
+            )
+        elif model_id == "grok":
+            response = litellm.completion(
+                model=model_config["model"],  
+                messages=messages,
+                temperature=0.3,
+                max_tokens=model_config["max_output_tokens"],
+                api_key=litellm.xai_api_key
             )
         else:
             response = litellm.completion(
-                model=model_config["model"],
+                model="openai/gpt-4o",
                 messages=messages,
                 temperature=0.3,
-                max_tokens=model_config["max_output_tokens"]
+                max_tokens=4096,
+                api_key= os.getenv("OPENAI_API_KEY")
             )
         
         # Extract and return the response with token usage
@@ -320,7 +348,7 @@ def create_llm_response_from_markdown(
     
 def summarize_markdown(
     markdown_path: str, 
-    model_id: str = "gemini",
+    model_id: str,
     output_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -379,7 +407,7 @@ def summarize_markdown(
 def qa_markdown(
     markdown_path: str, 
     question: str,
-    model_id: str = "gemini",
+    model_id: str,
     output_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -434,17 +462,17 @@ if __name__ == "__main__":
     
     if os.path.exists(markdown_file):
         # Example of using different models for summary
-        for model in ["gemini","deepseek","claude","grok","gpt4o"]:
-            try:
-                summary = summarize_markdown(markdown_file, model_id=model)
-                print(f"\n{MODEL_CONFIGS[model]['name']} Summary Preview:")
-                print(summary[:500] + "..." if len(summary) > 500 else summary)
-            except Exception as e:
-                print(f"Error with {model}: {str(e)}")
+        # for model in ["claude"]:
+        #     try:
+        #         summary = summarize_markdown(markdown_file, model_id=model)
+        #         print(f"\n{MODEL_CONFIGS[model]['name']} Summary Preview:")
+        #         print(summary[:500] + "..." if len(summary) > 500 else summary)
+        #     except Exception as e:
+        #         print(f"Error with {model}: {str(e)}")
         
         # Example of Q&A
-        question = "What are the risks mentioned in the Q4 report?"
-        answer = qa_markdown(markdown_file, question, model_id="gemini")
+        question = "What is the command for testing locally env file in the docker"
+        answer = qa_markdown(markdown_file, question, model_id="grok")
         print("\nQ&A Preview:")
         print(answer[:500] + "..." if len(answer) > 500 else answer)
     else:

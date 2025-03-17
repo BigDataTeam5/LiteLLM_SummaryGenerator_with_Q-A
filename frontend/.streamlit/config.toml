@@ -1,0 +1,5 @@
+[server]
+runOnSave = true
+fileWatcherType = "poll"
+[connections]
+fastapi= "https://llm-fastapi-service-84150543519.us-central1.run.app"

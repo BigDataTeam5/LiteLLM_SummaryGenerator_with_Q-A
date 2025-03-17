@@ -7,10 +7,10 @@ import litellm
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv('.env',override=True)
 
-# Configure LiteLLM with your Gemini API key
-litellm.api_key = os.getenv("GEMINI_API_KEY")
+# Configure LiteLLM with DeepSeek API key
+litellm.deepseek_api_key= os.getenv("DEEP_SEEK_API_KEY")
 
 def encode_image_to_base64(image_path: str) -> str:
     """Convert an image file to base64 encoding."""
@@ -87,90 +87,65 @@ def process_markdown_with_images(markdown_path: str) -> Dict[str, Any]:
         "image_paths": image_paths
     }
 
-def create_gemini_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
+def create_deepseek_summary_from_markdown(markdown_path: str, max_images: int = 5) -> str:
     """
-    Generate a summary of markdown content using Gemini.
-    
-    Args:
-        markdown_path: Path to the markdown file
-        max_images: Maximum number of images to include (Gemini has input limits)
-        
-    Returns:
-        A string containing the summary
+    Generate a summary of markdown content using DeepSeek.
     """
     try:
-        # Check if file exists
         if not os.path.exists(markdown_path):
             return f"Error: Markdown file not found at {markdown_path}"
             
-        # Process the markdown file
         content = process_markdown_with_images(markdown_path)
         
-        # Prepare the prompt
-        prompt_text = f"""
-        I need you to create a comprehensive summary of the following document content.
+        # DeepSeek specific prompt format
+        prompt_text = f"""Please create a comprehensive summary of the following document content.
+        Be objective and analytical in your summary.
         
-        The content is from a Markdown file that includes text and may reference images.
-        Please analyze all the provided information and create a well-structured summary that:
-        
-        1. Identifies the main topic and purpose of the document
-        2. Summarizes the key points and findings
-        3. Highlights important data from any tables
-        4. Describes what's shown in the images
-        5. Organizes the information in a logical flow
-        
-        Here's the markdown content:
-        
+        Document Content:
         {content["text_content"]}
+        
+        Structure your summary to:
+        1. State the main topic and purpose
+        2. List key findings and points
+        3. Describe any tables or data
+        4. Explain visual content
+        5. Present a logical flow of information
         """
         
-        # Prepare the messages with text and images
-        messages = [{"role": "user", "content": prompt_text}]
+        # Prepare media content for DeepSeek
+        media_content = []
+        for img_path in content["image_paths"][:max_images]:
+            try:
+                base64_image = encode_image_to_base64(img_path)
+                media_content.append({
+                    "type": "image",
+                    "data": base64_image,
+                    "format": "base64"
+                })
+            except Exception as e:
+                print(f"Error encoding image {img_path}: {e}")
         
-        # Add images if available (limited to max_images)
-        image_paths = content["image_paths"][:max_images]  # Limit number of images
+        # DeepSeek message format
+        messages = [
+            {
+                "role": "user",
+                "content": prompt_text,
+                "images": media_content if media_content else None
+            }
+        ]
         
-        if image_paths:
-            # For multimodal input with images
-            image_parts = []
-            for img_path in image_paths:
-                try:
-                    base64_image = encode_image_to_base64(img_path)
-                    image_parts.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    })
-                except Exception as e:
-                    print(f"Error encoding image {img_path}: {e}")
-            
-            # Add image parts to the message
-            if image_parts:
-                messages = [
-                    {
-                        "role": "user", 
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            *image_parts
-                        ]
-                    }
-                ]
-        
-        # Call Gemini model using LiteLLM - use the newer 1.5 models
-        # Use gemini-1.5-flash for both text and image inputs
+        # Call DeepSeek model using LiteLLM
         response = litellm.completion(
-            model="gemini/gemini-1.5-flash",  # Using the newer model
+            model="deepseek-vision/deepseek-vl-7b-chat",
             messages=messages,
             temperature=0.3,
             max_tokens=4000
         )
         
-        # Extract and return the summary
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from Gemini."
+            return "Error: No response generated from DeepSeek."
     
     except Exception as e:
         return f"Error generating summary: {str(e)}"
@@ -196,13 +171,13 @@ def summarize_markdown(markdown_path: str, output_dir: Optional[str] = None) -> 
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate the summary
-    summary = create_gemini_summary_from_markdown(markdown_path)
+    summary = create_deepseek_summary_from_markdown(markdown_path)
     
     # Get the original filename without extension
     markdown_filename = Path(markdown_path).stem
     
     # Save the summary to a file
-    summary_path = os.path.join(output_dir, f"{markdown_filename}_gemini_summary.md")
+    summary_path = os.path.join(output_dir, f"{markdown_filename}_deepseek_summary.md")
     with open(summary_path, "w", encoding="utf-8") as f:
         f.write(summary)
     
@@ -210,80 +185,61 @@ def summarize_markdown(markdown_path: str, output_dir: Optional[str] = None) -> 
     return summary
 
 def answer_question_about_markdown(markdown_path: str, question: str, max_images: int = 5) -> str:
-    """
-    Generate an answer to a specific question about the markdown content using Gemini.
-    
-    Args:
-        markdown_path: Path to the markdown file
-        question: User's question about the content
-        max_images: Maximum number of images to include
-        
-    Returns:
-        A string containing the answer
-    """
+    """Generate answer using DeepSeek."""
     try:
         if not os.path.exists(markdown_path):
             return f"Error: Markdown file not found at {markdown_path}"
             
         content = process_markdown_with_images(markdown_path)
         
-        prompt_text = f"""
-        Please answer the following question about the document content.
-        Use only the information provided in the document to answer.
-        If the answer cannot be found in the document, please say so.
+        prompt_text = f"""Answer the following question based only on the provided document content:
 
         Document content:
         {content["text_content"]}
 
         Question: {question}
-        """
+
+        If the answer cannot be found in the document, please state that clearly."""
         
-        messages = [{"role": "user", "content": prompt_text}]
+        media_content = []
+        for img_path in content["image_paths"][:max_images]:
+            try:
+                base64_image = encode_image_to_base64(img_path)
+                media_content.append({
+                    "type": "image",
+                    "data": base64_image,
+                    "format": "base64"
+                })
+            except Exception as e:
+                print(f"Error encoding image {img_path}: {e}")
         
-        image_paths = content["image_paths"][:max_images]
+        messages = [
+            {
+                "role": "user",
+                "content": prompt_text,
+                "images": media_content if media_content else None
+            }
+        ]
         
-        if image_paths:
-            image_parts = []
-            for img_path in image_paths:
-                try:
-                    base64_image = encode_image_to_base64(img_path)
-                    image_parts.append({
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{base64_image}"
-                        }
-                    })
-                except Exception as e:
-                    print(f"Error encoding image {img_path}: {e}")
-            
-            if image_parts:
-                messages = [
-                    {
-                        "role": "user", 
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            *image_parts
-                        ]
-                    }
-                ]
-        
+        # Update this section in the answer_question_about_markdown function
         response = litellm.completion(
-            model="gemini/gemini-1.5-flash",
+            model="deepseek/deepseek-reasoner",
             messages=messages,
             temperature=0.3,
-            max_tokens=4000
+            max_tokens=2000,
+            api_key = litellm.deepseek_api_key
         )
         
         if response and response.choices and response.choices[0].message.content:
             return response.choices[0].message.content
         else:
-            return "Error: No response generated from Gemini."
+            return "Error: No response generated from DeepSeek."
     
     except Exception as e:
         return f"Error generating answer: {str(e)}"
 
 if __name__ == "__main__":
-    markdown_file = "2408.09869v5-with-image-refs.md"
+    markdown_file = "Cloud_Run.md"
     
     if not os.path.exists(markdown_file):
         print(f"Markdown file not found: {markdown_file}")
