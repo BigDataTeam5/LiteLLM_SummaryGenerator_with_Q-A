@@ -64,7 +64,6 @@ local/
 # Docker-Specific Files
 # =============================
 docker-compose.override.yml
-.env
 
 # =============================
 # Miscellaneous
@@ -76,4 +75,5 @@ docker-compose.override.yml
 **/*.json
 **/*.xml
 **/*.md
-
+poetry.lock
+pyproject.toml

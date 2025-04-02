@@ -44,28 +44,11 @@ if "processing_text_summary" not in st.session_state:
 
 # FastAPI Base URL - Simple configuration
 if "fastapi_url" not in st.session_state:
-    try:
-        # First try to get URL from environment variable (for Docker)
-        fastapi_url = os.environ.get("FASTAPI_URL")
-        
-        # If not set, try config file
-        if not fastapi_url:
-            config_path = os.path.join(os.path.dirname(__file__), ".streamlit", "config.toml")
-            if os.path.exists(config_path):
-                config_data = toml.load(config_path)
-                fastapi_url = config_data.get("connections", {}).get("fastapi")
-        
-        # If still not set, use the deployed FastAPI service URL as fallback
-        if fastapi_url:
-            st.session_state.fastapi_url = fastapi_url
-        else:
-            # Use deployed FastAPI service instead of localhost
-            st.session_state.fastapi_url = "http://localhost:8080/"
+    config_path = os.path.join(os.path.dirname(__file__), ".streamlit", "config.toml")
+    if os.path.exists(config_path):
+        config_data = toml.load(config_path)
+        st.session_state.fastapi_url = config_data.get("connections", {}).get("FASTAPI_URL")
             
-    except Exception as e:
-        # If config file can't be read, use deployed FastAPI service as default
-        st.session_state.fastapi_url = "http://localhost:8080/"
-        print(f"Error setting FastAPI URL: {e}")
                 
 if "api_connected" not in st.session_state:
     st.session_state.api_connected = True
@@ -95,34 +78,6 @@ def update_api_endpoints():
 
 # Initial setup of API endpoints
 update_api_endpoints()
-
-# Function to test API connection - Add support for potential backend health endpoints
-def test_api_connection():
-    try:
-        
-        response = requests.get(f"{st.session_state.fastapi_url}/", timeout=5)
-        if response.status_code == 200:
-            st.session_state.api_connected = True
-            return True, "Connection successful!"
-        
-        # If root fails, try the health endpoint
-        response = requests.get(f"{st.session_state.fastapi_url}/health", timeout=5)
-        if response.status_code == 200:
-            st.session_state.api_connected = True
-            return True, "Connection successful via health endpoint!"
-            
-        st.session_state.api_connected = False
-        return False, f"API responded with status code: {response.status_code}"
-    except requests.exceptions.ConnectionError:
-        st.session_state.api_connected = False
-        return False, f"Connection error: Could not connect to the FastAPI server at {st.session_state.fastapi_url}. Please check the URL and ensure the server is running."
-    except requests.exceptions.Timeout:
-        st.session_state.api_connected = False
-        return False, "Connection timeout: The request timed out. Server might be overloaded or unavailable."
-    except Exception as e:
-        st.session_state.api_connected = False
-        return False, f"Unexpected error: {str(e)}"
-# Function to calculate token costs with better error handling
 def calculate_token_cost(model_id, usage_data):
     """Calculate the cost of token usage based on model rates"""
     # Define pricing per 1000 tokens for different models (approximate as of 2025)
@@ -509,29 +464,29 @@ if "available_models" not in st.session_state:
 with st.sidebar:
     st.subheader("API Configuration")
     
-    # API URL configuration
-    api_url = st.text_input("FastAPI URL", value=st.session_state.fastapi_url)
+    # # API URL configuration
+    # api_url = st.text_input("FastAPI URL", value=st.session_state.fastapi_url)
     
-    if api_url != st.session_state.fastapi_url:
-        st.session_state.fastapi_url = api_url
-        update_api_endpoints()
-        st.session_state.api_connected = False
+    # if api_url != st.session_state.fastapi_url:
+    #     st.session_state.fastapi_url = api_url
+    #     update_api_endpoints()
+    #     st.session_state.api_connected = False
     
-    # Test connection button
-    if st.button("Test Connection"):
-        success, message = test_api_connection()
-        if success:
-            st.success(message)
-        else:
-            st.error(message)
+    # # Test connection button
+    # if st.button("Test Connection"):
+    #     success, message = test_api_connection()
+    #     if success:
+    #         st.success(message)
+    #     else:
+    #         st.error(message)
     
-    # Display connection status
-    if st.session_state.api_connected:
-        st.success("✅ Connected to FastAPI")
-    else:
-        st.warning("❌ Not connected to FastAPI")
+    # # Display connection status
+    # if st.session_state.api_connected:
+    #     st.success("✅ Connected to FastAPI")
+    # else:
+    #     st.warning("❌ Not connected to FastAPI")
     
-    st.divider()
+    # st.divider()
     
     st.subheader("Select Options")
 
