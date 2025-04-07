@@ -19,6 +19,9 @@ COPY . /app/
 RUN rm -rf /app/frontend 
 RUN rm -rf /app/.git
 
+COPY .env /app/.env
+RUN chmod 600 /app/.env
+
 
 # Upgrade pip, setuptools, and wheel
 RUN pip install --upgrade pip setuptools wheel

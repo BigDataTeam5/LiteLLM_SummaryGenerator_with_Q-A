@@ -9,29 +9,20 @@ import time
 
 # Function to force reload environment variables
 def reload_env_variables():
-    """Force reload environment variables from .env file, clearing any cached values"""
-    # Clear specific environment variables we're using
-    for key in ["GEMINI_API_KEY", "ANTHROPIC_API_KEY", "DEEP_SEEK_API_KEY", 
-                "OPENAI_API_KEY", "GROK_API_KEY"]:
-        if key in os.environ:
-            del os.environ[key]
-    
-    # Get the full path to .env file
+    # Calculate absolute path to .env file
     env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
-    print(f"Loading .env from: {env_path}")
-    print(f"File exists: {os.path.exists(env_path)}")
     
-    # Load with dotenv with override flag
-    load_dotenv('.env',override=True)
-    
-    # Add a timestamp to verify it's reloading
-    print(f"Environment reloaded at: {time.strftime('%H:%M:%S')}")
-
+    # Try to load but don't fail if missing
+    if os.path.exists(env_path):
+        load_dotenv(env_path, override=True)
+        print("Environment loaded successfully")
+    else:
+        print("No .env file found, continuing with defaults")
 reload_env_variables()
 # Configure LiteLLM with API keys
 litellm.gemini_key = os.getenv("GEMINI_API_KEY")
 litellm.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-litellm.deepseek_api_key = os.getenv("DEEP_SEEK_API_KEY")
+litellm.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
 litellm.openai_api_key = os.getenv("OPENAI_API_KEY")
 litellm.xai_api_key = os.getenv("GROK_API_KEY")
 

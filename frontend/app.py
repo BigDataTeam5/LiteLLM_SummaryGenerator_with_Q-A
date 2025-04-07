@@ -7,7 +7,6 @@ import json
 import uuid
 import toml
 sys.path.append("LLM_Interactor")
-# from logger import api_logger
 
 # Streamlit UI
 st.set_page_config(page_title="PDF-to-LLM Assistant", layout="wide")
@@ -407,13 +406,13 @@ def poll_for_llm_result(job_id, max_retries=15, interval=2):
     while retries < max_retries:
         try:
             # Calculate progress percentage
-            progress = min(retries / max_retries, 0.95)  # Cap at 95% until complete
+            progress = min(retries / max_retries, 0.95)  
             progress_bar.progress(progress)
             
             # Check result status
             response = requests.get(
                 f"{st.session_state.GET_LLM_RESULT_API}/{job_id}",
-                timeout=10
+                timeout=15
             )
             
             if response.status_code == 200:
