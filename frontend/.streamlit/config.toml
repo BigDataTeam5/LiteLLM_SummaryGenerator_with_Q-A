@@ -2,4 +2,4 @@
 runOnSave = true
 fileWatcherType = "poll"
 [connections]
-FASTAPI_URL= "http://localhost:8080/"
+FASTAPI_URL= "http://34.42.226.222:8080"
