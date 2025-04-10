@@ -37,9 +37,13 @@ COPY api/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Set environment variables
 ENV PORT=8080
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 
+ENV WORKERS=2
+ENV TIMEOUT=180
 
-# Expose the ports for FastAPI and Redis
-EXPOSE 8080 6379
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Command to start supervisor which will manage all processes
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
