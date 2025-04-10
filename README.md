@@ -122,9 +122,8 @@ docker-compose up --build -d
 ---
 ## Deployed Links 
 
-- FASTAPI URL = [http://34.42.226.222:8080/docs](http://34.42.226.222:8080/docs)
+- FASTAPI URL = [[http://34.42.226.222:8080/docs](http://34.42.226.222:8080)]
 - STREAMLIT URL = [https://llm-interactor-gpt.streamlit.app/](https://llm-interactor-gpt.streamlit.app/)
-- REDIS URL = [http://34.42.226.222:6379](http://34.42.226.222:6379/)
 
 ## Contributing
 
