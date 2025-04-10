@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Backgroun
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import Dict, Any, Optional, List
+import gc
 from pydantic import BaseModel
 import os
 import sys
@@ -17,6 +18,7 @@ MAX_PAGE_COUNT = 5  # Max allowed pages
 import time
 import redis
 import json
+import shutil
 import asyncio
 import tempfile
 # Add the root directory to the Python path
@@ -365,40 +367,36 @@ async def get_latest_file_url() -> Dict[str, Any]:
 
     return current_file
 
-@app.get("/convert-pdf-markdown")
-async def convert_pdf_to_markdown_api(service_type: str = Query("Open Source")):
-    """
-    Uses the saved latest file details to convert the PDF into markdown using Docling.
-    """
-    api_logger.info(f"PDF to Markdown conversion requested using service type: {service_type}")
+@app.post("/convert-pdf-to-markdown")
+async def convert_pdf_to_markdown(file: UploadFile = File(...)):
+    # Create a temporary file path
+    temp_dir = tempfile.mkdtemp()
     try:
-        if not latest_file_details:
-            api_logger.warning("No file has been downloaded yet")
-            raise HTTPException(status_code=404, detail="No file has been downloaded yet. Please fetch the latest file first.")
+        temp_pdf_path = os.path.join(temp_dir, "temp.pdf")
+        
+        # Write file to disk in chunks instead of loading all at once
+        with open(temp_pdf_path, "wb") as pdf_file:
+            while chunk := await file.read(1024 * 1024):  # Read 1MB chunks
+                pdf_file.write(chunk)
+        
+        # Process PDF page by page instead of all at once
+        markdown_content = ""
+        with fitz.open(temp_pdf_path) as pdf:
+            for page_num in range(len(pdf)):
+                page = pdf[page_num]
+                text = page.get_text()
+                # Process text to markdown
+                markdown_content += f"## Page {page_num + 1}\n\n{text}\n\n"
+                
+                # Force garbage collection after each page
+                page = None
+                gc.collect()
+        
+        return {"markdown": markdown_content}
+    finally:
+        # Clean up temporary files
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
-        current_file = latest_file_details[-1]
-        # Extract the details from the saved data
-        local_path = current_file.get("local_path")
-        filename = current_file.get("filename")
-
-        if not local_path or not filename:
-            api_logger.warning("Incomplete file details")
-            raise HTTPException(status_code=404, detail="Incomplete file details. Please fetch the latest file again.")
-
-        pdf_logger.info(f"Starting Docling conversion for {filename} using {service_type} service")
-        main(local_path, service_type)
-        pdf_logger.info(f"Docling conversion completed for {filename}")
-
-        return {
-            "filename": filename,
-            "message": "PDF successfully converted to Markdown using Docling and uploaded to S3",
-            "local_path": local_path,
-        }
-
-    except Exception as e:
-        log_error("Docling Markdown conversion failed", e)
-        raise HTTPException(status_code=500, detail=f"Docling Markdown conversion failed: {str(e)}")
-    
 @app.get("/fetch-latest-markdown-urls")
 async def fetch_latest_markdown_from_s3():
     """
