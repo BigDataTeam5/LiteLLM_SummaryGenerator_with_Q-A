@@ -2,4 +2,4 @@
 runOnSave = true
 fileWatcherType = "poll"
 [connections]
-FASTAPI_URL= "https://llm-fastapi-service-app-84150543519.us-central1.run.app"
+FASTAPI_URL= "http://localhost:8080/"

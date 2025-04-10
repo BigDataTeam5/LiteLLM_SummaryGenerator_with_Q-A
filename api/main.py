@@ -850,4 +850,4 @@ async def check_llm_health():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, log_level="info")

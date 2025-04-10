@@ -149,6 +149,7 @@ def upload_pdf(file):
         return {"error": str(e)}
             
 # Function to Convert PDF to Markdown (With Progress Bar)
+# Function to Convert PDF to Markdown (With Progress Bar)
 def convert_to_markdown():
     with st.spinner("⏳ Converting PDF to Markdown... Please wait."):
         progress_bar = st.progress(0)
@@ -160,13 +161,25 @@ def convert_to_markdown():
 
             service_type = st.session_state.get("service_type", None)
             # Step 1: Get Latest File URL
-            response_latest = requests.get(st.session_state.LATEST_FILE_API,params={"service_type": service_type})
+            response_latest = requests.get(st.session_state.LATEST_FILE_API, params={"service_type": service_type})
             if response_latest.status_code != 200:
                 progress_bar.empty()
                 return {"error": f"❌ Failed to fetch latest file URL: {response_latest.text}"}
 
-            # Step 2: Convert PDF to Markdown
-            response = requests.get(st.session_state.CONVERT_MARKDOWN_API)
+            # Get the file path from the response
+            latest_file_data = response_latest.json()
+            file_path = latest_file_data.get("local_path")
+            
+            if not file_path:
+                progress_bar.empty()
+                return {"error": "❌ Failed to get file path from latest file"}
+
+            # Step 2: Convert PDF to Markdown with file_path parameter
+            response = requests.get(
+                st.session_state.CONVERT_MARKDOWN_API, 
+                params={"file_path": file_path}
+            )
+            
             if response.status_code == 200:
                 st.session_state.markdown_ready = True
                 progress_bar.empty()
@@ -180,6 +193,8 @@ def convert_to_markdown():
         except requests.exceptions.RequestException as e:
             progress_bar.empty()
             return {"error": f"⚠️ API Request Failed: {str(e)}"}
+
+
 # Function to Fetch Markdown File from S3
 def fetch_markdown():
     with st.spinner("⏳ Fetching Markdown File from S3... Please wait."):
