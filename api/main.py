@@ -367,36 +367,45 @@ async def get_latest_file_url() -> Dict[str, Any]:
 
     return current_file
 
-@app.post("/convert-pdf-to-markdown")
-async def convert_pdf_to_markdown(file: UploadFile = File(...)):
-    # Create a temporary file path
-    temp_dir = tempfile.mkdtemp()
-    try:
-        temp_pdf_path = os.path.join(temp_dir, "temp.pdf")
-        
-        # Write file to disk in chunks instead of loading all at once
-        with open(temp_pdf_path, "wb") as pdf_file:
-            while chunk := await file.read(1024 * 1024):  # Read 1MB chunks
-                pdf_file.write(chunk)
-        
-        # Process PDF page by page instead of all at once
-        markdown_content = ""
-        with fitz.open(temp_pdf_path) as pdf:
-            for page_num in range(len(pdf)):
-                page = pdf[page_num]
-                text = page.get_text()
-                # Process text to markdown
-                markdown_content += f"## Page {page_num + 1}\n\n{text}\n\n"
-                
-                # Force garbage collection after each page
-                page = None
-                gc.collect()
-        
-        return {"markdown": markdown_content}
-    finally:
-        # Clean up temporary files
-        shutil.rmtree(temp_dir, ignore_errors=True)
 
+@app.get("/convert-pdf-markdown")
+async def convert_pdf_markdown_get(file_path: str = Query(...)):
+    """
+    GET endpoint for PDF to markdown conversion that matches frontend requests.
+    Accepts a file path parameter instead of file upload.
+    """
+    api_logger.info(f"Convert PDF to markdown request received for file: {file_path}")
+    
+    try:
+        # Check if file exists
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+        
+        # Create a temporary directory
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Process PDF page by page to avoid memory issues
+            markdown_content = ""
+            with fitz.open(file_path) as pdf:
+                for page_num in range(len(pdf)):
+                    page = pdf[page_num]
+                    text = page.get_text()
+                    # Process text to markdown
+                    markdown_content += f"## Page {page_num + 1}\n\n{text}\n\n"
+                    
+                    # Force garbage collection after each page
+                    page = None
+                    gc.collect()
+            
+            return {"markdown": markdown_content}
+        finally:
+            # Clean up temporary files
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+    except Exception as e:
+        log_error(f"Error converting PDF to markdown: {str(e)}", e)
+        raise HTTPException(status_code=500, detail=f"Error converting PDF: {str(e)}")
+    
 @app.get("/fetch-latest-markdown-urls")
 async def fetch_latest_markdown_from_s3():
     """
