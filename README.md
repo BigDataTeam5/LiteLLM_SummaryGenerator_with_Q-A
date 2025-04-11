@@ -136,15 +136,11 @@ Contributions are welcome! Please open an **Issue** or submit a **Pull Request**
 
 **WE ATTEST THAT WE HAVEN’T USED ANY OTHER STUDENTS’ WORK IN OUR ASSIGNMENT AND ABIDE BY THE POLICIES LISTED IN THE STUDENT HANDBOOK.**
 
-### Contribution Breakdown:
-- **Member 1:** 33 1/3%
-- **Member 2:** 33 1/3%
-- **Member 3:** 33 1/3%
+### Contribution By:
+- **Member 1:** Shushil Girish
+- **Member 2:** Yash Khavnekar
+- **Member 3:** Riya Mate
 
-### GitHub Links:
-- **Repository Link:** [Insert GitHub Repository Link]
-- **Task Tracking:** [Insert GitHub Issues Link]
-- **Task Ownership:** [List of tasks owned by each team member]
 
 ---
 ## License
