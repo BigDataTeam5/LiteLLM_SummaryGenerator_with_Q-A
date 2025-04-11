@@ -121,7 +121,7 @@ docker-compose up --build -d
 
 ---
 ## CODELABS
-   - https://teams.microsoft.com/l/message/19:96570d47-7e03-4ebf-99c9-3df4ba6d6bfb_ee403b13-fe9d-4afd-a73c-a973edf7130b@unq.gbl.spaces/1744352155848?context=%7B%22contextType%22%3A%22chat%22%7D
+   - https://codelabs-preview.appspot.com/?file_id=1biVounrJNzJWvfJZndxTEbvLmOyDxHUHNV6K4e0E1mI#8
 ## Deployed Links 
 
 - FASTAPI URL = http://34.58.87.68:8080/docs
