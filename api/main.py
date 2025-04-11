@@ -386,6 +386,9 @@ async def convert_pdf_markdown_get(file_path: str = Query(...)):
         try:
             # Process PDF page by page to avoid memory issues
             markdown_content = ""
+            doc_filename = os.path.basename(file_path).replace(".pdf", "")
+            service_type = "API"  # Default service type for direct API conversions
+            
             with fitz.open(file_path) as pdf:
                 for page_num in range(len(pdf)):
                     page = pdf[page_num]
@@ -397,6 +400,28 @@ async def convert_pdf_markdown_get(file_path: str = Query(...)):
                     page = None
                     gc.collect()
             
+            # Save the markdown to a file in the temp directory
+            markdown_file_path = os.path.join(temp_dir, f"{doc_filename}-with-images.md")
+            with open(markdown_file_path, "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+            
+            # Define S3 folder path
+            job_folder = f"{doc_filename}-{service_type}"
+            s3_folder = f"pdf_processing_pipeline/markdown_outputs/{job_folder}/"
+            
+            # Upload the markdown file to S3
+            s3_key = f"{s3_folder}{doc_filename}-with-images.md"
+            try:
+                s3_client.upload_file(markdown_file_path, S3_BUCKET, s3_key)
+                s3_logger.info(f"Markdown file uploaded to S3: s3://{S3_BUCKET}/{s3_key}")
+                
+                # Also add a version with -with-image-refs suffix for consistency with docklingextraction.py
+                s3_key_refs = f"{s3_folder}{doc_filename}-with-image-refs.md"
+                s3_client.upload_file(markdown_file_path, S3_BUCKET, s3_key_refs)
+                s3_logger.info(f"Markdown file (with refs) uploaded to S3: s3://{S3_BUCKET}/{s3_key_refs}")
+            except Exception as e:
+                s3_logger.error(f"Failed to upload markdown to S3: {str(e)}")
+            
             return {"markdown": markdown_content}
         finally:
             # Clean up temporary files
@@ -405,7 +430,7 @@ async def convert_pdf_markdown_get(file_path: str = Query(...)):
     except Exception as e:
         log_error(f"Error converting PDF to markdown: {str(e)}", e)
         raise HTTPException(status_code=500, detail=f"Error converting PDF: {str(e)}")
-    
+
 @app.get("/fetch-latest-markdown-urls")
 async def fetch_latest_markdown_from_s3():
     """

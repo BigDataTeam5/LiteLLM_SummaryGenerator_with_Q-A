@@ -149,7 +149,6 @@ def upload_pdf(file):
         return {"error": str(e)}
             
 # Function to Convert PDF to Markdown (With Progress Bar)
-# Function to Convert PDF to Markdown (With Progress Bar)
 def convert_to_markdown():
     with st.spinner("⏳ Converting PDF to Markdown... Please wait."):
         progress_bar = st.progress(0)
@@ -183,9 +182,44 @@ def convert_to_markdown():
             if response.status_code == 200:
                 st.session_state.markdown_ready = True
                 progress_bar.empty()
-                # Call fetch_markdown_history after success conversion
+                
+                # Store the converted markdown directly in session state
+                markdown_content = response.json().get("markdown", "")
+                if markdown_content:
+                    # Get filename from path for display
+                    filename = os.path.basename(file_path).replace(".pdf", "")
+                    st.session_state.selected_markdown_name = filename
+                    st.session_state.selected_markdown_content = markdown_content
+                    
+                    # Add to markdown history manually if not fetched from API
+                    if "markdown_history" not in st.session_state:
+                        st.session_state.markdown_history = []
+                    
+                    # Create a history entry for the current conversion
+                    new_entry = {
+                        "label": filename,
+                        "url": "#local",  # Special marker for locally stored content
+                        "folder": "current",
+                        "last_modified": time.strftime("%Y-%m-%dT%H:%M:%S")
+                    }
+                    
+                    # Remove any existing entry with the same name
+                    st.session_state.markdown_history = [
+                        item for item in st.session_state.markdown_history 
+                        if item.get("label") != filename
+                    ]
+                    
+                    # Add new entry at the beginning
+                    st.session_state.markdown_history.insert(0, new_entry)
+                    
+                    print(f"Added local markdown to history: {filename}")
+                
+                # Now fetch from S3 to update the remote entries
+                # Add a short delay to allow S3 to update
+                time.sleep(2)
                 fetch_markdown_history()
-                return {"message": "✅ Markdown Conversion Completed! Click View to see results."}
+                
+                return {"message": f"✅ Markdown Conversion Completed for {filename}! Your markdown is now available in the sidebar."}
             else:
                 progress_bar.empty()
                 return {"error": f"❌ Markdown conversion failed! Response: {response.text}"}
@@ -243,54 +277,92 @@ def fetch_markdown_history():
     Fetch all image-ref markdown files from S3 across all folders.
     """
     try:
+        # Save local entries before fetching from API
+        local_entries = []
+        if "markdown_history" in st.session_state and st.session_state.markdown_history:
+            local_entries = [item for item in st.session_state.markdown_history if item.get("url") == "#local"]
+        
         with st.spinner("⏳ Fetching markdown history... Please wait."):
             response = requests.get(st.session_state.FETCH_MARKDOWN_HISTORY)
             # Debug: Print API response
             print(f"API Response Status: {response.status_code}")
             print(f"API Response URL: {st.session_state.FETCH_MARKDOWN_HISTORY}")
         
-        if response.status_code == 200:
+        # Try alternate method if FETCH_MARKDOWN_HISTORY fails
+        if response.status_code != 200:
+            print("Trying alternate method to fetch markdown history...")
+            try:
+                # Use the downloadable markdown endpoint as backup
+                alt_response = requests.get(st.session_state.FETCH_DOWNLOADABLE_MARKDOWN_API)
+                if alt_response.status_code == 200:
+                    markdown_downloads = alt_response.json().get("markdown_downloads", [])
+                    remote_entries = []
+                    for item in markdown_downloads:
+                        try:
+                            display_name = item["file_name"].replace("-with-images.md", "").replace("-with-image-refs.md", "")
+                            remote_entries.append({
+                                "label": display_name,
+                                "url": item["download_url"],
+                                "folder": "latest", 
+                                "last_modified": time.strftime("%Y-%m-%dT%H:%M:%S")
+                            })
+                        except KeyError:
+                            continue
+                else:
+                    remote_entries = []
+            except Exception as e:
+                print(f"Alternate method also failed: {e}")
+                remote_entries = []
+        else:
+            # Process remote entries from API
+            remote_entries = []
             markdown_data = response.json()
             print(f"Markdown Data: {markdown_data}")  # Debug print
             
-            # Process the markdown files for display in sidebar history
-            history_items = []
-            
-            if "image_ref_markdowns" not in markdown_data:
+            if "image_ref_markdowns" in markdown_data:
+                for item in markdown_data.get("image_ref_markdowns", []):
+                    try:
+                        display_name = item["file_name"].replace("-with-images.md", "").replace("-with-image-refs.md", "")
+                        remote_entries.append({
+                            "label": display_name,
+                            "url": item["download_url"],
+                            "folder": item["folder"],
+                            "last_modified": item["last_modified"]
+                        })
+                    except KeyError as e:
+                        print(f"Error processing item: {e}, Item data: {item}")
+                        continue
+            else:
                 print(f"Expected keys not found. Available keys: {markdown_data.keys()}")
-                return []
-            
-            for item in markdown_data.get("image_ref_markdowns", []):
-                try:
-                    display_name = item["file_name"].replace("-with-image-", "").replace(".md", "")
-                    history_items.append({
-                        "label": display_name,
-                        "url": item["download_url"],
-                        "folder": item["folder"],
-                        "last_modified": item["last_modified"]
-                    })
-                except KeyError as e:
-                    print(f"Error processing item: {e}, Item data: {item}")
-                    continue
-            
-            # Update session state with the history items
-            if history_items:
-                st.session_state.markdown_history = history_items
-                print(f"Updated history with {len(history_items)} items")
-            return history_items
-        else:
-            print(f"API Error: {response.status_code}, {response.text}")
-            st.error(f"Failed to fetch markdown history! Response: {response.text}")
-            return []
+        
+        # Combine local and remote entries
+        combined_entries = []
+        
+        # Add local entries first
+        combined_entries.extend(local_entries)
+        
+        # Add remote entries, avoiding duplicates by label
+        existing_labels = [item["label"] for item in combined_entries]
+        for item in remote_entries:
+            if item["label"] not in existing_labels:
+                combined_entries.append(item)
+                existing_labels.append(item["label"])
+        
+        # Update session state with the combined entries
+        if combined_entries:
+            st.session_state.markdown_history = combined_entries
+            print(f"Updated history with {len(combined_entries)} items")
+        
+        return combined_entries
 
     except requests.RequestException as e:
         print(f"Request Exception: {e}")
-        st.error(f"Request error: {str(e)}")
-        return []
+        # Keep existing history if request fails
+        return st.session_state.get("markdown_history", [])
     except Exception as e:
         print(f"Unexpected error: {e}")
-        st.error(f"Unexpected error: {str(e)}")
-        return []
+        # Keep existing history if there's an error
+        return st.session_state.get("markdown_history", [])
     
 if not st.session_state.markdown_history:
     fetch_markdown_history()
@@ -527,7 +599,7 @@ with st.sidebar:
             else:
                 st.error(f"❌ LLM Service issues: {health_status.get('error', 'Unknown')}")
 
- # Next button
+    # Next button
     if st.button("Next"):
         if processing_type == "Select an option" or service_type == "Select Service":
             st.error("Please select both Processing Type and Service Type.")
@@ -568,6 +640,32 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.subheader("📑 Markdown History")
+    
+    # Add debug expander
+    with st.expander("Debug Info", expanded=False):
+        st.write("Session State Keys:")
+        st.write(list(st.session_state.keys()))
+        
+        st.write("Markdown History Items:")
+        history_count = len(st.session_state.get("markdown_history", []))
+        st.write(f"{history_count} items")
+        
+        if history_count > 0:
+            st.write("History Items:")
+            for i, item in enumerate(st.session_state.get("markdown_history", [])):
+                st.write(f"{i+1}. {item.get('label', 'Unknown')}")
+        
+        st.write("Selected Markdown:")
+        st.write(st.session_state.get("selected_markdown_name", "None"))
+        
+        st.write("Current Content Available:")
+        st.write("Yes" if st.session_state.get("selected_markdown_content") else "No")
+        
+        if st.button("Clear History", key="clear_history"):
+            st.session_state.markdown_history = []
+            st.success("History cleared!")
+            st.rerun()
+    
     # Show markdown history items with ChatGPT-like styling
     history_container = st.container()
     with history_container:
@@ -582,11 +680,32 @@ with st.sidebar:
                 
                 if st.button(markdown["label"], key=f"history_{idx}", use_container_width=True):
                     try:
-                        content = requests.get(markdown["url"]).text
+                        # Handle locally stored markdown content differently
+                        if markdown["url"] == "#local":
+                            # Use the content already in session state
+                            if st.session_state.get("selected_markdown_content") and st.session_state.selected_markdown_name == markdown["label"]:
+                                content = st.session_state.selected_markdown_content
+                            else:
+                                st.warning("Markdown content not found in session state.")
+                                continue
+                        else:
+                            # Fetch content from URL for remote files
+                            try:
+                                response = requests.get(markdown["url"], timeout=5)
+                                if response.status_code == 200:
+                                    content = response.text
+                                else:
+                                    st.error(f"Failed to fetch markdown: {response.status_code}")
+                                    continue
+                            except requests.RequestException as e:
+                                st.error(f"Error fetching markdown: {str(e)}")
+                                continue
+                        
                         st.session_state.selected_markdown_content = content
                         st.session_state.selected_markdown_name = markdown["label"]
                         st.session_state.markdown_ready = True
                         st.session_state.next_clicked = False
+                        
                         if markdown["label"] in st.session_state.markdown_summaries:
                             st.session_state.summary_result = st.session_state.markdown_summaries[markdown["label"]]
                         else:
@@ -890,11 +1009,20 @@ else:
 
                 st.markdown("## 📄 Available Markdown Files")
                 
-                # ✅ Fetch markdown files from API
+                # Try to get local markdown first if available
+                if st.session_state.get("selected_markdown_content") and st.session_state.get("selected_markdown_name"):
+                    st.success(f"✅ Markdown conversion complete: {st.session_state.selected_markdown_name}")
+                    
+                    # Add View Button for the local markdown
+                    if st.button("👀 View Current Markdown"):
+                        st.markdown("### 📄 Markdown Viewer")
+                        st.markdown(st.session_state.selected_markdown_content, unsafe_allow_html=True)
+                
+                # Also try to fetch from S3 as a backup
                 markdown_files = fetch_downloadable_markdown()
                 
                 if not markdown_files or "error" in markdown_files:
-                    st.warning("⚠️ No Markdown files found.")
+                    st.info("⚠️ No additional markdown files found on server.")
                 else:
                     # ✅ Display each markdown file as a selectable option
                     markdown_options = {file["file_name"]: file["download_url"] for file in markdown_files}
@@ -911,7 +1039,7 @@ else:
                             mime="text/markdown"
                         )
 
-                    if st.button("👀 View Selected Markdown"):
+                    if st.button("👀 View Selected S3 Markdown"):
                         if not selected_markdown_name:
                             st.warning("⚠️ Please select a Markdown file.")
                         else:
@@ -920,12 +1048,10 @@ else:
 
                             # ✅ Store selected markdown in session state
                             st.session_state.selected_markdown_content = markdown_content
+                            st.session_state.selected_markdown_name = selected_markdown_name
 
-                # ✅ Show Markdown Content if a file is selected
-                if st.session_state.get("selected_markdown_content", None):
-                    st.markdown("### 📄 Markdown Viewer")
-                    
-                    # ✅ Use `st.markdown()` to properly render Markdown with headings, lists, etc.
-                    st.markdown(st.session_state.selected_markdown_content, unsafe_allow_html=True)
+                            # Show the content
+                            st.markdown("### 📄 Markdown Viewer")
+                            st.markdown(markdown_content, unsafe_allow_html=True)
 
 
