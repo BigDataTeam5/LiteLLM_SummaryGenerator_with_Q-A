@@ -6,7 +6,6 @@ import os
 import json
 import uuid
 import toml
-sys.path.append("LLM_Interactor")
 
 # Streamlit UI
 st.set_page_config(page_title="PDF-to-LLM Assistant", layout="wide")
