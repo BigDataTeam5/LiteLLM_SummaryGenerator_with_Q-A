@@ -46,10 +46,18 @@ if "fastapi_url" not in st.session_state:
     if os.path.exists(config_path):
         config_data = toml.load(config_path)
         st.session_state.fastapi_url = config_data.get("connections", {}).get("FASTAPI_URL")
+        # Ensure there's no trailing slash to avoid double slashes in API endpoints
+        if st.session_state.fastapi_url and st.session_state.fastapi_url.endswith("/"):
+            st.session_state.fastapi_url = st.session_state.fastapi_url.rstrip("/")
+    else:
+        st.warning("Config file not found. Using default API URL.")
+        st.session_state.fastapi_url = "http://34.58.87.68:8080"
             
                 
 if "api_connected" not in st.session_state:
-    st.session_state.api_connected = True
+    st.session_state.api_connected = False  # Start with False and verify connection
+if "connection_error" not in st.session_state:
+    st.session_state.connection_error = None
 if "markdown_summaries" not in st.session_state:
     st.session_state.markdown_summaries = {}  # Key: markdown_name, Value: summary_result
 if "markdown_qa" not in st.session_state:
@@ -59,7 +67,7 @@ if "markdown_qa" not in st.session_state:
 def update_api_endpoints():
     base_url = st.session_state.fastapi_url
     
-    # API Endpoints
+    # API Endpoints - ensure no double slashes
     st.session_state.UPLOAD_PDF_API = f"{base_url}/upload-pdf"
     st.session_state.LATEST_FILE_API = f"{base_url}/get-latest-file-url"
     st.session_state.PARSE_PDF_API = f"{base_url}/parse-pdf"
@@ -76,6 +84,246 @@ def update_api_endpoints():
 
 # Initial setup of API endpoints
 update_api_endpoints()
+
+# Test API connection with timeout
+def test_api_connection(timeout=5):
+    """Test the connection to the FastAPI backend with a specified timeout"""
+    try:
+        # Test connection to root endpoint first - lightest weight
+        root_response = requests.get(f"{st.session_state.fastapi_url}/", timeout=timeout)
+        if root_response.status_code == 200:
+            # If root works, test health endpoint
+            health_response = requests.get(st.session_state.LLM_HEALTH_API, timeout=timeout)
+            if health_response.status_code == 200:
+                st.session_state.api_connected = True
+                st.session_state.connection_error = None
+                return True, "Successfully connected to FastAPI backend"
+            else:
+                st.session_state.api_connected = False
+                st.session_state.connection_error = f"LLM health check failed: {health_response.status_code}"
+                return False, f"FastAPI root endpoint is accessible, but LLM health check failed: {health_response.status_code}"
+        else:
+            st.session_state.api_connected = False
+            st.session_state.connection_error = f"FastAPI connection failed: {root_response.status_code}"
+            return False, f"Failed to connect to FastAPI: HTTP {root_response.status_code}"
+    except requests.exceptions.Timeout:
+        st.session_state.api_connected = False
+        st.session_state.connection_error = "Connection timed out"
+        return False, f"Connection to {st.session_state.fastapi_url} timed out after {timeout} seconds"
+    except requests.exceptions.ConnectionError:
+        st.session_state.api_connected = False
+        st.session_state.connection_error = "Connection error"
+        return False, f"Cannot connect to {st.session_state.fastapi_url}. The server may be down or unreachable."
+    except Exception as e:
+        st.session_state.api_connected = False
+        st.session_state.connection_error = str(e)
+        return False, f"Error connecting to FastAPI: {str(e)}"
+
+# Test connection at startup with short timeout to avoid blocking the app
+if "api_connected" not in st.session_state or not st.session_state.api_connected:
+    with st.spinner("Testing API connection..."):
+        success, message = test_api_connection(timeout=5)
+
+# Function to fetch available LLM models from API with timeout
+def fetch_available_models(timeout=5):
+    """Fetch available LLM models from the backend API with timeout"""
+    try:
+        response = requests.get(st.session_state.LLM_MODELS_API, timeout=timeout)
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            return models
+        else:
+            print(f"Could not fetch models: {response.status_code}")
+            return ["gemini"]  # Default fallback model
+    except requests.exceptions.Timeout:
+        print(f"Request to fetch models timed out after {timeout} seconds")
+        return ["gemini"]  # Default fallback
+    except Exception as e:
+        print(f"Error fetching models: {str(e)}")
+        return ["gemini"]  # Default fallback model
+
+# Only fetch models at startup if connected to API
+if "available_models" not in st.session_state:
+    if st.session_state.api_connected:
+        st.session_state.available_models = fetch_available_models()
+    else:
+        st.session_state.available_models = ["gemini"]  # Default when not connected
+
+# Function to check LLM health
+def check_llm_health(timeout=5):
+    """Check if the LLM backend is healthy"""
+    try:
+        response = requests.get(st.session_state.LLM_HEALTH_API, timeout=timeout)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"status": "unhealthy", "error": f"Status code: {response.status_code}"}
+    except requests.exceptions.Timeout:
+        return {"status": "unhealthy", "error": f"Request timed out after {timeout} seconds"}
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
+
+def submit_summarization(content, model):
+    """Submit content for summarization"""
+    try:
+        with st.spinner("⏳ Generating summary with LLM... This may take a moment."):
+            # Set processing state
+            st.session_state.processing_summary = True
+            request_id = f"summary_{uuid.uuid4()}"
+            
+            # Prepare the request payload
+            payload = {
+                "request_id": request_id,
+                "content": content,
+                "model": model,
+                "content_type": "markdown"
+            }
+            
+            # Submit to API with longer timeout
+            response = requests.post(
+                st.session_state.SUMMARIZE_API, 
+                json=payload,
+                timeout=30  # Increased timeout
+            )
+            
+            if response.status_code == 202:
+                # Got a job ID, need to poll for result
+                job_id = response.json().get("request_id")
+                result = poll_for_llm_result(job_id, max_retries=30, interval=3)  # Longer polling
+                                
+                if result and "error" not in result:
+                    # Store the summary in session state
+                    st.session_state.summary_result = result
+                    # Add timestamp to the result
+                    result["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                    return result
+                else:
+                    st.error(f"Error getting summary: {result.get('error', 'Unknown error')}")
+                    return None
+            else:
+                st.error(f"Failed to submit for summarization: {response.text}")
+                return None
+    except requests.exceptions.Timeout:
+        st.error("Request timed out. The server took too long to respond.")
+        return None
+    except Exception as e:
+        st.error(f"Error in summarization: {str(e)}")
+        return None
+    finally:
+        st.session_state.processing_summary = False
+
+# Enhanced function to submit question to LLM - Updated to handle markdown content
+def submit_question(content, question, model):
+    """Submit markdown content and question to be answered by the selected LLM model"""
+    try:
+        with st.spinner("⏳ Processing your question with LLM... This may take a moment."):
+            # Generate a unique request ID
+            request_id = f"question_{uuid.uuid4()}"
+
+            # Submit the question request with markdown content
+            response = requests.post(
+                st.session_state.ASK_QUESTION_API,
+                json={
+                    "request_id": request_id,
+                    "content": content,
+                    "question": question,
+                    "model": model,
+                    "max_tokens": 1500,
+                    "temperature": 0.5,
+                    "content_type": "markdown"  # Explicitly mark as markdown content
+                },
+                timeout=45  # Increased timeout
+            )
+
+            if response.status_code == 202:
+                st.session_state.processing_question = True
+                st.info("Processing your question...")
+
+                # Start polling for results with extended timeout
+                result = poll_for_llm_result(request_id, max_retries=30, interval=3)
+                if result and "error" not in result:
+                    st.session_state.question_result = result
+                    return result
+                else:
+                    st.error(f"Error getting answer: {result.get('error', 'Unknown error')}")
+                    return None
+            else:
+                st.error(f"Failed to submit question: {response.text}")
+                return None
+    except requests.exceptions.Timeout:
+        st.error("Request timed out. The server took too long to respond.")
+        return None
+    except Exception as e:
+        st.error(f"Error in question processing: {str(e)}")
+        return None
+    finally:
+        st.session_state.processing_question = False
+
+# Improved polling function with progress bar and timeout
+def poll_for_llm_result(job_id, max_retries=30, interval=3):
+    """Poll for LLM result with a progress bar and better timeout handling"""
+    retries = 0
+    
+    # Create a progress bar
+    progress_text = "Waiting for LLM to process your request..."
+    progress_bar = st.progress(0)
+    
+    while retries < max_retries:
+        try:
+            # Calculate progress percentage
+            progress = min(retries / max_retries, 0.95)  
+            progress_bar.progress(progress)
+            
+            # Check result status with increased timeout
+            response = requests.get(
+                f"{st.session_state.GET_LLM_RESULT_API}/{job_id}",
+                timeout=30  # Increased timeout
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                status = result_data.get("status")
+                
+                if status == "completed":
+                    progress_bar.progress(1.0)  # Complete the progress bar
+                    time.sleep(0.5)  # Brief pause to show completed progress
+                    progress_bar.empty()  # Remove the progress bar
+                    return result_data
+                    
+                elif status == "failed":
+                    progress_bar.empty()
+                    st.error(f"LLM processing failed: {result_data.get('error', 'Unknown error')}")
+                    return None
+                    
+            
+            elif response.status_code == 404:
+                # Job not found
+                progress_bar.empty()
+                st.error("Job not found. It may have expired or been deleted.")
+                return None
+                
+            else:
+                # Other error
+                st.warning(f"Unexpected response while checking status: {response.status_code}")
+            
+            # Wait before next retry
+            retries += 1
+            time.sleep(interval)
+            
+        except requests.exceptions.Timeout:
+            progress_bar.empty()
+            st.error(f"Timeout while polling for results. The server took too long to respond.")
+            return None
+        except Exception as e:
+            progress_bar.empty()
+            st.error(f"Error while polling for result: {str(e)}")
+            return None
+    
+    # If we get here, we've exceeded max retries
+    progress_bar.empty()
+    st.error(f"Timed out waiting for LLM response after {max_retries * interval} seconds. The document may be too large or complex.")
+    return None
+
 def calculate_token_cost(model_id, usage_data):
     """Calculate the cost of token usage based on model rates"""
     # Define pricing per 1000 tokens for different models (approximate as of 2025)
@@ -365,185 +613,6 @@ def fetch_markdown_history():
     
 if not st.session_state.markdown_history:
     fetch_markdown_history()
-
-# Function to fetch available LLM models from API
-def fetch_available_models():
-    """Fetch available LLM models from the backend API"""
-    try:
-        response = requests.get(st.session_state.LLM_MODELS_API)
-        if response.status_code == 200:
-            models = response.json().get("models", [])
-            return models
-        else:
-            st.warning(f"Could not fetch available models: {response.status_code}")
-            return ["gemini"]  # Default fallback model
-    except Exception as e:
-        st.warning(f"Error fetching models: {str(e)}")
-        return ["gemini"]  # Default fallback model
-
-# Function to check LLM health
-def check_llm_health():
-    """Check if the LLM backend is healthy"""
-    try:
-        response = requests.get(st.session_state.LLM_HEALTH_API)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"status": "unhealthy", "error": f"Status code: {response.status_code}"}
-    except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}
-
-def submit_summarization(content, model):
-    """Submit content for summarization"""
-    try:
-        with st.spinner("⏳ Generating summary with LLM... This may take a moment."):
-            # Set processing state
-            st.session_state.processing_summary = True
-            request_id = f"summary_{uuid.uuid4()}"
-            
-            # Prepare the request payload
-            payload = {
-                "request_id": request_id,
-                "content": content,
-                "model": model,
-                "content_type": "markdown"
-            }
-            
-            # Submit to API
-            response = requests.post(
-                st.session_state.SUMMARIZE_API, 
-                json=payload
-            )
-            
-            if response.status_code == 202:
-                # Got a job ID, need to poll for result
-                job_id = response.json().get("request_id")
-                result = poll_for_llm_result(job_id)
-                                
-                if result and "error" not in result:
-                    # Store the summary in session state
-                    st.session_state.summary_result = result
-                    # Add timestamp to the result
-                    result["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    return result
-                else:
-                    st.error(f"Error getting summary: {result.get('error', 'Unknown error')}")
-                    return None
-            else:
-                st.error(f"Failed to submit for summarization: {response.text}")
-                return None
-    except Exception as e:
-        st.error(f"Error in summarization: {str(e)}")
-        return None
-    finally:
-        st.session_state.processing_summary = False
-
-# Enhanced function to submit question to LLM - Updated to handle markdown content
-def submit_question(content, question, model):
-    """Submit markdown content and question to be answered by the selected LLM model"""
-    try:
-        with st.spinner("⏳ Processing your question with LLM... This may take a moment."):
-            # Generate a unique request ID
-            request_id = f"question_{uuid.uuid4()}"
-
-            # Submit the question request with markdown content
-            response = requests.post(
-                st.session_state.ASK_QUESTION_API,
-                json={
-                    "request_id": request_id,
-                    "content": content,
-                    "question": question,
-                    "model": model,
-                    "max_tokens": 1500,
-                    "temperature": 0.5,
-                    "content_type": "markdown"  # Explicitly mark as markdown content
-                },
-                timeout=30
-            )
-
-            if response.status_code == 202:
-                st.session_state.processing_question = True
-                st.info("Processing your question...")
-
-                # Start polling for results
-                result = poll_for_llm_result(request_id)
-                if result and "error" not in result:
-                    st.session_state.question_result = result
-                    return result
-                else:
-                    st.error(f"Error getting answer: {result.get('error', 'Unknown error')}")
-                    return None
-            else:
-                st.error(f"Failed to submit question: {response.text}")
-                return None
-    except Exception as e:
-        st.error(f"Error in question processing: {str(e)}")
-        return None
-
-# Improved polling function with progress bar and timeout
-def poll_for_llm_result(job_id, max_retries=15, interval=2):
-    """Poll for LLM result with a progress bar and better timeout handling"""
-    retries = 0
-    
-    # Create a progress bar
-    progress_text = "Waiting for LLM to process your request..."
-    progress_bar = st.progress(0)
-    
-    while retries < max_retries:
-        try:
-            # Calculate progress percentage
-            progress = min(retries / max_retries, 0.95)  
-            progress_bar.progress(progress)
-            
-            # Check result status
-            response = requests.get(
-                f"{st.session_state.GET_LLM_RESULT_API}/{job_id}",
-                timeout=15
-            )
-            
-            if response.status_code == 200:
-                result_data = response.json()
-                status = result_data.get("status")
-                
-                if status == "completed":
-                    progress_bar.progress(1.0)  # Complete the progress bar
-                    time.sleep(0.5)  # Brief pause to show completed progress
-                    progress_bar.empty()  # Remove the progress bar
-                    return result_data
-                    
-                elif status == "failed":
-                    progress_bar.empty()
-                    st.error(f"LLM processing failed: {result_data.get('error', 'Unknown error')}")
-                    return None
-                    
-            
-            elif response.status_code == 404:
-                # Job not found
-                progress_bar.empty()
-                st.error("Job not found. It may have expired or been deleted.")
-                return None
-                
-            else:
-                # Other error
-                st.warning(f"Unexpected response while checking status: {response.status_code}")
-            
-            # Wait before next retry
-            retries += 1
-            time.sleep(interval)
-            
-        except Exception as e:
-            progress_bar.empty()
-            st.error(f"Error while polling for result: {str(e)}")
-            return None
-    
-    # If we get here, we've exceeded max retries
-    progress_bar.empty()
-    st.error(f"Timed out waiting for LLM response after {max_retries * interval} seconds. The document may be too large or complex.")
-    return None
-
-# Fetch models at startup
-if "available_models" not in st.session_state:
-    st.session_state.available_models = fetch_available_models()
 
 # Sidebar UI
 with st.sidebar:
